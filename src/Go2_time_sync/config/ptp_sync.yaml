@@ -1,0 +1,54 @@
+# PTP (IEEE 1588) 硬件时间同步配置文件
+# 本机为 PTP Master，MID360 激光雷达为 Slave
+
+# 网络接口配置
+network:
+  # 连接 MID360 的网卡名称（根据实际情况修改，如 eth0, enp3s0, eno1 等）
+  interface: "eth0"
+
+# MID360 激光雷达配置
+lidar:
+  # MID360 的 IP 地址
+  ip: "192.168.1.12"
+  # 本机（Master）IP 地址
+  host_ip: "192.168.1.5"
+
+# NTP 本机时间校准配置（在启动 PTP 从机同步之前，先将本机时间与网络时间对齐）
+ntp:
+  # 是否启用 NTP 校准（建议保持 true）
+  enabled: true
+  # NTP 服务器列表（按优先顺序依次尝试）
+  servers:
+    - "ntp.aliyun.com"        # 阿里云 NTP（国内首选）
+    - "cn.pool.ntp.org"       # NTP Pool 中国节点
+    - "time1.cloud.tencent.com"  # 腾讯云 NTP
+    - "time.windows.com"      # 微软 NTP（备用）
+    - "pool.ntp.org"          # 全球 NTP Pool（最后备用）
+  # 单个服务器查询超时（秒）
+  timeout: 5
+  # 最大允许本机与网络时间的偏差（秒），超过此值才强制校准
+  # 设为 0 表示始终校准
+  max_offset_seconds: 1.0
+  # 校准重试次数（在所有服务器均失败时）
+  retry_count: 2
+  # 是否在 NTP 校准失败时仍继续启动 PTP（true=继续，false=中止）
+  continue_on_failure: true
+
+# PTP 同步参数
+ptp:
+  # 域编号（0-127，默认 0）
+  domain: 0
+  # 优先级1（越小越优先成为 Master，0-255）
+  priority1: 128
+  # 优先级2（越小越优先成为 Master，0-255）
+  priority2: 128
+  # 日志同步间隔（2^n 秒，-3 = 0.125s，0 = 1s）
+  log_sync_interval: 0
+  # 日志通告间隔（2^n 秒，1 = 2s）
+  log_announce_interval: 1
+  # 日志延迟请求间隔
+  log_min_delay_req_interval: 0
+  # 传输模式：L2（以太网层2）或 UDPv4
+  transport: "UDPv4"
+  # 时钟类型：E2E（端到端）或 P2P（点对点）
+  delay_mechanism: "E2E"

@@ -1,0 +1,52 @@
+/**:
+    ros__parameters:
+        feature_extract_enable: false
+        save_map_enable: true
+        point_filter_num: 3
+        max_iteration: 3
+        filter_size_surf: 0.1
+        filter_size_map: 0.1  #降采样栅格大小
+        cube_side_length: 1000.0
+        runtime_pos_log_enable: false
+        map_file_path: "/home/wangzhenjie/ws_fastlio2/src/FAST_LIO_ROS2/PCD/MID360.pcd"
+
+        common:
+            lid_topic:  "/livox/lidar"     # MID360 LiDAR话题
+            imu_topic:  "/livox/imu"       # IMU话题
+            time_sync_en: false             # 不用外部时间同步时保持false
+            time_offset_lidar_to_imu: 0.0  # 时间偏移，未校准可保持0
+
+        preprocess:
+            lidar_type: 1                   # 1 = Livox MID360
+            scan_line: 4                     # MID360扫描线数
+            blind: 0.5                       # 盲区
+            timestamp_unit: 3                # 时间戳单位（默认秒）
+            scan_rate: 10                    # 雷达频率 Hz
+
+        mapping:
+            acc_cov: 0.1
+            gyr_cov: 0.1
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree: 360.0
+            det_range: 100.0
+            extrinsic_est_en: true           # 在线估计IMU-LiDAR外参
+            extrinsic_T: [ -0.011, -0.02329, 0.04412 ]  # 建议根据实际测量微调
+            extrinsic_R: [ 1., 0., 0.,
+                            0., 1., 0.,
+                            0., 0., 1.]
+
+        publish:
+            map_frame: camera_init
+            odom_frame: camera_init
+            body_frame: base_link
+            path_en: true
+            effect_map_en: false
+            map_en: true
+            scan_publish_en: true
+            dense_publish_en: false
+            scan_bodyframe_pub_en: true
+
+        pcd_save:
+            pcd_save_en: true
+            interval: 10   # 每10帧保存一次PCD，更安全，避免内存崩溃

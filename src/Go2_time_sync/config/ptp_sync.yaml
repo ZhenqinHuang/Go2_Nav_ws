@@ -39,9 +39,9 @@ ptp:
   # 域编号（0-127，默认 0）
   domain: 0
   # 优先级1（越小越优先成为 Master，0-255）
-  priority1: 128
+  priority1: 10
   # 优先级2（越小越优先成为 Master，0-255）
-  priority2: 128
+  priority2: 10
   # 日志同步间隔（2^n 秒，-3 = 0.125s，0 = 1s）
   log_sync_interval: 0
   # 日志通告间隔（2^n 秒，1 = 2s）

@@ -107,7 +107,8 @@ sudo python3 scripts/start_ptp_sync.py
 sudo python3 scripts/start_ptp_sync.py --config /path/to/ptp_sync.yaml
 
 # 跳过 NTP 校准直接启动 PTP（网络不可用时）
-sudo python3 scripts/start_ptp_sync.py --skip-ntp
+
+
 
 # NTP 仅检测偏差，不修改时钟（调试用）
 sudo python3 scripts/start_ptp_sync.py --ntp-dry-run
@@ -179,6 +180,7 @@ ros2 topic echo /ptp_sync/is_synced
 ```
 
 ---
+
 
 ## 常见问题
 

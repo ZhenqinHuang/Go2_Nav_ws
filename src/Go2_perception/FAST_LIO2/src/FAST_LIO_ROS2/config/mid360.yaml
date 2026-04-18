@@ -1,52 +1,136 @@
 /**:
     ros__parameters:
-        feature_extract_enable: false
-        save_map_enable: true
-        point_filter_num: 3
+        # ============================================================
+        # FAST-LIO2 MID360 配置文件
+        # 平台: Jetson Orin NX 8GB (6核 Cortex-A78AE, 16 GB LPDDR5)
+        # 安装: MID360 倾斜安装，绕机体 X 轴向下偏转 45°
+        #        (FOV 向前下方，适合地面/斜坡场景)
+        # ============================================================
+
+        feature_extract_enable: false  # Livox 非重复扫描不需要特征提取
+        save_map_enable: false          # 实时运行时关闭，避免占用 I/O 和内存
+
+        # ── Orin NX 性能调优 ────────────────────────────────────────
+        # point_filter_num: 每 N 个点取 1 个，值越大点云越稀疏但 CPU 越低
+        # Orin NX 8GB 建议值 3-4；若 CPU 持续 >80% 可调至 4 或 5
+        point_filter_num: 4
+
+        # max_iteration: IEKF 最大迭代次数，3 次在大多数场景已收敛
+        # Orin NX 下建议 3，激烈运动场景可视情调至 4
         max_iteration: 3
-        filter_size_surf: 0.1
-        filter_size_map: 0.1  #降采样栅格大小
-        cube_side_length: 1000.0
-        runtime_pos_log_enable: false
-        map_file_path: "/home/wangzhenjie/ws_fastlio2/src/FAST_LIO_ROS2/PCD/MID360.pcd"
+
+        # filter_size_surf: 激光帧内体素降采样 (m)
+        # 值越大保留点越少，CPU/内存越低，但精度略降
+        # Orin NX 推荐 0.2-0.3（户外）；室内窄空间可用 0.15
+        filter_size_surf: 0.3
+
+        # filter_size_map: 地图体素降采样 (m)
+        # 建议与 filter_size_surf 相同或略大，控制地图内存占用
+        # Orin NX 8GB: 0.3 约对应数千平方米地图 200-400 MB
+        filter_size_map: 0.3
+
+        # cube_side_length: 局部地图边长 (m)，仅保留该范围内的点
+        # 值越小内存越低，但频繁移除/插入会增加 iKD-Tree 开销
+        # Orin NX 推荐 200-300 m (室外巡检) / 100 m (室内)
+        cube_side_length: 200.0
+
+        runtime_pos_log_enable: false   # 关闭日志，减少 I/O
+
+        map_file_path: "/home/wangzhenjie/Go2_Nav_ws/src/Go2_perception/FAST_LIO2/src/FAST_LIO_ROS2/PCD/MID360.pcd"
 
         common:
-            lid_topic:  "/livox/lidar"     # MID360 LiDAR话题
-            imu_topic:  "/livox/imu"       # IMU话题
-            time_sync_en: false             # 不用外部时间同步时保持false
-            time_offset_lidar_to_imu: 0.0  # 时间偏移，未校准可保持0
+            lid_topic:  "/livox/lidar"      # MID360 点云话题
+            imu_topic:  "/livox/imu"        # MID360 内置 IMU 话题
+            # 已通过 Go2_time_sync (PTP) 完成硬件级时间同步，无需软件补偿
+            time_sync_en: false
+            time_offset_lidar_to_imu: 0.0
 
         preprocess:
-            lidar_type: 1                   # 1 = Livox MID360
-            scan_line: 4                     # MID360扫描线数
-            blind: 0.5                       # 盲区
-            timestamp_unit: 3                # 时间戳单位（默认秒）
-            scan_rate: 10                    # 雷达频率 Hz
+            lidar_type: 1               # 1 = Livox 系列 (MID360)
+            scan_line: 4                # MID360 扫描线数
+            blind: 0.3                  # 近距盲区 (m)，MID360 最小量程约 0.05 m
+                                        # 设为 0.3 过滤机体反射噪点
+            timestamp_unit: 3          # 3 = 秒 (Livox ROS2 驱动默认)
+            scan_rate: 10              # MID360 点云帧率 10 Hz
 
         mapping:
+            # ── IMU 噪声协方差 ──────────────────────────────────────
+            # MID360 内置 IMU (ICM-40609) 参考噪声参数
+            # 加速度计连续噪声: ~2.4e-3 m/s²/√Hz → cov ≈ 0.01～0.1
+            # 陀螺仪连续噪声:   ~1.2e-3 rad/s/√Hz → cov ≈ 0.01～0.1
             acc_cov: 0.1
             gyr_cov: 0.1
+            # IMU 零偏随机游走协方差（值越小收敛越精确但越慢）
             b_acc_cov: 0.0001
             b_gyr_cov: 0.0001
+
+            # MID360 水平 FOV 360°，垂直 -7°~+52°（非均匀）
+            # 倾斜 45° 后等效垂直覆盖 -52°~+7°（转为前下方覆盖）
+            # fov_degree 设为 360 保留全水平范围内有效点
             fov_degree: 360.0
-            det_range: 100.0
-            extrinsic_est_en: true           # 在线估计IMU-LiDAR外参
-            extrinsic_T: [ -0.011, -0.02329, 0.04412 ]  # 建议根据实际测量微调
-            extrinsic_R: [ 1., 0., 0.,
-                            0., 1., 0.,
-                            0., 0., 1.]
+
+            # 有效检测距离 (m)，超出范围的点不纳入地图
+            # MID360 标称 40 m @ 10% 反射率，70 m @ 80%
+            # Orin NX 内存有限，建议 40-60 m
+            det_range: 50.0
+
+            # ── LiDAR-IMU 外参 ──────────────────────────────────────
+            # MID360 内置 IMU 与激光中心在同一模块内，平移极小
+            # 下方参数来自 Livox 官方手册参考值，可后续用 LI-Init 精细标定
+            extrinsic_est_en: true      # 启用在线外参估计，适合倾斜安装初期补偿误差
+
+            # 平移向量 [x, y, z] (m)，LiDAR 相对 IMU 的偏移
+            # MID360 官方参考值（可根据实际安装微调）
+            extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+
+            # ── 旋转矩阵说明 ────────────────────────────────────────
+            # MID360 倾斜安装：绕机体坐标系 X 轴旋转 -45°（雷达头部向下偏转）
+            #
+            # 旋转约定: extrinsic_R 为 R_LiDAR_to_IMU
+            # 即将 LiDAR 坐标系下的点转换到 IMU/Body 坐标系
+            #
+            # 绕 X 轴旋转 -45° 的旋转矩阵 Rx(-45°):
+            #   [ 1,       0,        0    ]
+            #   [ 0,  cos(-45°), -sin(-45°) ]   =  [ 1,  0,      0     ]
+            #   [ 0,  sin(-45°),  cos(-45°) ]      [ 0,  0.7071, 0.7071]
+            #                                       [ 0, -0.7071, 0.7071]
+            #
+            # 如果雷达是绕 Y 轴倾斜（左右方向）请改用 Ry(±45°)：
+            #   Ry(-45°) = [ 0.7071, 0, -0.7071 ]
+            #              [ 0,      1,  0       ]
+            #              [ 0.7071, 0,  0.7071  ]
+            #
+            # ⚠️ 若实际安装方向不同（如向后/向左倾），请对应修改符号
+            #    并将 extrinsic_est_en 设为 true 让系统在线补偿残差
+            # ────────────────────────────────────────────────────────
+            extrinsic_R: [ 1.0,     0.0,     0.0,
+                           0.0,     0.70711, 0.70711,
+                           0.0,    -0.70711, 0.70711 ]
 
         publish:
-            map_frame: camera_init
-            odom_frame: camera_init
-            body_frame: base_link
-            path_en: true
-            effect_map_en: false
-            map_en: true
-            scan_publish_en: true
-            dense_publish_en: false
-            scan_bodyframe_pub_en: true
+            map_frame:   camera_init
+            odom_frame:  camera_init
+            body_frame:  base_link
+
+            path_en:              true
+            effect_map_en:        false  # 关闭有效点云发布，节省带宽
+
+            # map_en: 全局点云地图发布（大场景下消耗带宽/内存）
+            # Orin NX 8GB 建议在导航运行时设为 false，调试时再开
+            map_en:               false
+
+            # scan_publish_en: 发布每帧降采样后的点云
+            # Orin NX 建议保持 true（供导航使用），但带宽紧张时可关闭
+            scan_publish_en:      true
+
+            # dense_publish_en: 发布原始稠密点云（内存/带宽开销大）
+            # Orin NX 8GB 建议关闭
+            dense_publish_en:     false
+
+            scan_bodyframe_pub_en: true  # 发布 body 坐标系下的点云（供下游使用）
 
         pcd_save:
-            pcd_save_en: true
-            interval: 10   # 每10帧保存一次PCD，更安全，避免内存崩溃
+            # 实时运行时关闭 PCD 保存，避免磁盘 I/O 影响实时性
+            # 建图完成后运行 save_map 服务即可
+            pcd_save_en:  false
+            interval:     20    # 若开启保存，每 20 帧写一次，减少 I/O 突刺

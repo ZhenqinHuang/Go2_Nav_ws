@@ -58,8 +58,40 @@ def check_hw_timestamp(iface: str) -> bool:
         print(f'[OK] {iface} 支持硬件时间戳')
         return True
     else:
-        print(f'[警告] {iface} 不支持硬件时间戳，将回退到软件时间戳')
+        print(f'[警告] {iface} 不支持硬件时间戳，将使用软件时间戳')
         return False
+
+
+def write_ptp4l_cfg(config: dict, hw_ts: bool) -> str:
+    """生成 ptp4l 配置文件，返回路径（ptp4l 1.x 不支持长命令行选项）"""
+    iface = config['network']['interface']
+    ptp = config.get('ptp', {})
+    ts_mode = 'hardware' if hw_ts else 'software'
+
+    lines = [
+        '[global]',
+        f'domainNumber          {ptp.get("domain", 0)}',
+        f'priority1             {ptp.get("priority1", 128)}',
+        f'priority2             {ptp.get("priority2", 128)}',
+        'clockClass            135',
+        'clockAccuracy         0xFE',
+        'offsetScaledLogVariance 0xFFFF',
+        f'network_transport     {ptp.get("transport", "UDPv4")}',
+        f'delay_mechanism       {ptp.get("delay_mechanism", "E2E")}',
+        f'time_stamping         {ts_mode}',
+        f'logSyncInterval       {ptp.get("log_sync_interval", 0)}',
+        f'logAnnounceInterval   {ptp.get("log_announce_interval", 1)}',
+        f'logMinDelayReqInterval {ptp.get("log_min_delay_req_interval", 0)}',
+        'announceReceiptTimeout 3',
+        'twoStepFlag           0',
+        'free_running          0',
+        'summary_interval      1',
+        f'[{iface}]',
+    ]
+    cfg_path = f'/tmp/ptp4l_{iface}.cfg'
+    with open(cfg_path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return cfg_path
 
 
 # ──────────────────────────────────────────────
@@ -68,45 +100,30 @@ def check_hw_timestamp(iface: str) -> bool:
 
 def start_ptp_master(config: dict, hw_ts: bool):
     iface = config['network']['interface']
-    ptp = config.get('ptp', {})
 
-    ts_mode = 'hardware' if hw_ts else 'software'
+    cfg_path = write_ptp4l_cfg(config, hw_ts)
+    ptp4l_cmd = ['ptp4l', '-f', cfg_path, '-m']
 
-    ptp4l_cmd = [
-        'ptp4l',
-        '-i', iface,
-        '-m',
-        '--domainNumber', str(ptp.get('domain', 0)),
-        '--priority1', str(ptp.get('priority1', 128)),
-        '--priority2', str(ptp.get('priority2', 128)),
-        '--logSyncInterval', str(ptp.get('log_sync_interval', 0)),
-        '--logAnnounceInterval', str(ptp.get('log_announce_interval', 1)),
-        '--logMinDelayReqInterval', str(ptp.get('log_min_delay_req_interval', 0)),
-        '--network_transport', ptp.get('transport', 'UDPv4'),
-        '--delay_mechanism', ptp.get('delay_mechanism', 'E2E'),
-        '--time_stamping', ts_mode,
-        '--twoStepFlag', '0',
-        '--clockClass', '135',
-        '--summary_interval', '1',
-    ]
-
-    print(f'\n[启动] ptp4l Master 模式 | 接口: {iface} | 时间戳: {ts_mode}')
+    print(f'\n[启动] ptp4l Master 模式 | 接口: {iface} | 时间戳: {"hardware" if hw_ts else "software"}')
     print(f'       命令: {" ".join(ptp4l_cmd)}')
     ptp4l_proc = subprocess.Popen(ptp4l_cmd, preexec_fn=os.setsid)
 
-    time.sleep(3)
-
-    # phc2sys: 系统时钟 -> PHC（Master 方向）
-    phc2sys_cmd = [
-        'phc2sys',
-        '-s', 'CLOCK_REALTIME',
-        '-c', iface,
-        '-O', '0',
-        '-m',
-        '-q',
-    ]
-    print(f'[启动] phc2sys (系统时钟 -> PHC) | 命令: {" ".join(phc2sys_cmd)}')
-    phc2sys_proc = subprocess.Popen(phc2sys_cmd, preexec_fn=os.setsid)
+    phc2sys_proc = None
+    if hw_ts:
+        time.sleep(3)
+        # phc2sys: 系统时钟 -> PHC（仅硬件时间戳模式需要）
+        phc2sys_cmd = [
+            'phc2sys',
+            '-s', 'CLOCK_REALTIME',
+            '-c', iface,
+            '-O', '0',
+            '-m',
+            '-q',
+        ]
+        print(f'[启动] phc2sys (系统时钟 -> PHC) | 命令: {" ".join(phc2sys_cmd)}')
+        phc2sys_proc = subprocess.Popen(phc2sys_cmd, preexec_fn=os.setsid)
+    else:
+        print('[信息] 软件时间戳模式，跳过 phc2sys（无 PHC 设备）')
 
     return ptp4l_proc, phc2sys_proc
 

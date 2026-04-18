@@ -1,0 +1,46 @@
+/**:
+    ros__parameters:
+        # ============================================================
+        # odom_tf_bridge 配置文件
+        # 机器狗 Go2 + FAST-LIO2 + Jetson Orin NX
+        # ============================================================
+
+        # ── 话题配置 ─────────────────────────────────────────────────
+        # FAST-LIO2 发布的里程计话题（固定为 /Odometry）
+        fastlio_odom_topic: "/Odometry"
+        # NAV2 期望的里程计话题
+        odom_topic: "/odom"
+
+        # ── 坐标系命名 ────────────────────────────────────────────────
+        # odom_frame: 对应 FAST-LIO2 的 "camera_init"（程序起点帧）
+        #             NAV2 约定命名为 "odom"
+        odom_frame: "odom"
+
+        # base_frame: 对应 FAST-LIO2 的 "body"（IMU/机体帧）
+        #             NAV2 约定命名为 "base_link"
+        #             Go2 的 base_link 与 IMU 帧基本重合
+        base_frame: "base_link"
+
+        # ── TF 广播 ───────────────────────────────────────────────────
+        # true = 本节点广播 odom → base_link TF
+        # 注意：FAST-LIO2 自身会广播 camera_init → body TF
+        #       本节点接管后应确保 FAST-LIO2 不与本节点冲突广播同名 TF
+        #       （FAST-LIO2 广播的是 camera_init→body，本节点广播 odom→base_link，不冲突）
+        publish_tf: true
+
+        # ── body → base_link 偏移（Go2 IMU 与机体中心的安装偏差）──────
+        # Go2 内置 IMU 位于机体中心附近，偏差通常 < 5 cm。
+        # 若不清楚精确值，保持 0 即可（FAST-LIO2 已通过外参估计补偿大部分误差）。
+        # 单位：米（m），body 坐标系下（x前、y左、z上）
+        body_to_base_link_x: 0.0
+        body_to_base_link_y: 0.0
+        body_to_base_link_z: 0.0
+
+        # ── 协方差默认值 ──────────────────────────────────────────────
+        # FAST-LIO2 不填充 /Odometry 的协方差字段（全零）。
+        # 本节点为 NAV2 补充合理的默认值：
+        #   位置 xyz 协方差: 0.01 m²  → 1σ ≈ ±10 cm（室内导航合理值）
+        #   姿态 rpy 协方差: 0.005 rad² → 1σ ≈ ±4°（IMU 积分精度）
+        # 若 FAST-LIO2 协方差非零，则直接透传（优先使用算法自估计值）。
+        default_pos_cov: 0.01
+        default_rot_cov: 0.005

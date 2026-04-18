@@ -24,6 +24,7 @@ import struct
 import sys
 import time
 import datetime
+from typing import List, Optional, Tuple
 
 import yaml
 
@@ -45,7 +46,7 @@ def _make_ntp_request() -> bytes:
     return bytes(packet)
 
 
-def query_ntp_server(server: str, timeout: int = 5) -> float | None:
+def query_ntp_server(server: str, timeout: int = 5) -> Optional[float]:
     """
     向单个 NTP 服务器查询当前 UTC 时间（Unix 时间戳，秒）。
 
@@ -83,8 +84,8 @@ def query_ntp_server(server: str, timeout: int = 5) -> float | None:
             pass
 
 
-def get_network_time(servers: list[str], timeout: int = 5,
-                     retry_count: int = 2) -> tuple[float | None, str]:
+def get_network_time(servers: List[str], timeout: int = 5,
+                     retry_count: int = 2) -> Tuple[Optional[float], str]:
     """
     依次尝试多个 NTP 服务器，返回第一个成功的网络时间和使用的服务器名。
 

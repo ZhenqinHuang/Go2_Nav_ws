@@ -150,14 +150,17 @@ class PtpSyncNode(Node):
                 )
                 sys.exit(1)
 
-        # 检查网卡硬件时间戳
+        # 检测网卡是否支持硬件时间戳
         result = subprocess.run(
             ['ethtool', '-T', self.interface],
             capture_output=True, text=True
         )
-        if 'hardware-transmit' not in result.stdout.lower():
+        self._hw_ts = 'hardware-transmit' in result.stdout.lower()
+        if self._hw_ts:
+            self.get_logger().info(f'网卡 {self.interface} 支持硬件时间戳')
+        else:
             self.get_logger().warn(
-                f'网卡 {self.interface} 可能不支持硬件时间戳，将尝试软件时间戳'
+                f'网卡 {self.interface} 不支持硬件时间戳，使用软件时间戳'
             )
 
     # ──────────────────────────────────────────
@@ -166,34 +169,34 @@ class PtpSyncNode(Node):
 
     def _build_ptp4l_cmd(self) -> list:
         cfg = self.config.get('ptp', {})
-        transport = cfg.get('transport', 'UDPv4')
-        delay_mech = cfg.get('delay_mechanism', 'E2E')
-        domain = cfg.get('domain', 0)
-        priority1 = cfg.get('priority1', 128)
-        priority2 = cfg.get('priority2', 128)
-        log_sync = cfg.get('log_sync_interval', 0)
-        log_ann = cfg.get('log_announce_interval', 1)
-        log_delay = cfg.get('log_min_delay_req_interval', 0)
+        ts_mode = 'hardware' if self._hw_ts else 'software'
 
-        cmd = [
-            'ptp4l',
-            '-i', self.interface,
-            '-m',                          # 输出到 stdout
-            '--domainNumber', str(domain),
-            '--priority1', str(priority1),
-            '--priority2', str(priority2),
-            '--logSyncInterval', str(log_sync),
-            '--logAnnounceInterval', str(log_ann),
-            '--logMinDelayReqInterval', str(log_delay),
-            '--network_transport', transport,
-            '--delay_mechanism', delay_mech,
-            '--time_stamping', 'hardware',
-            '--twoStepFlag', '0',
-            '--clockClass', '135',
-            '--free_running', '0',
-            '--summary_interval', '1',
+        # 动态生成 ptp4l 配置文件（ptp4l 1.x 不支持长命令行选项）
+        cfg_lines = [
+            '[global]',
+            f'domainNumber          {cfg.get("domain", 0)}',
+            f'priority1             {cfg.get("priority1", 128)}',
+            f'priority2             {cfg.get("priority2", 128)}',
+            'clockClass            135',
+            'clockAccuracy         0xFE',
+            'offsetScaledLogVariance 0xFFFF',
+            f'network_transport     {cfg.get("transport", "UDPv4")}',
+            f'delay_mechanism       {cfg.get("delay_mechanism", "E2E")}',
+            f'time_stamping         {ts_mode}',
+            f'logSyncInterval       {cfg.get("log_sync_interval", 0)}',
+            f'logAnnounceInterval   {cfg.get("log_announce_interval", 1)}',
+            f'logMinDelayReqInterval {cfg.get("log_min_delay_req_interval", 0)}',
+            'announceReceiptTimeout 3',
+            f'twoStepFlag           {"0" if self._hw_ts else "1"}',
+            'free_running          0',
+            'summary_interval      1',
+            f'[{self.interface}]',
         ]
-        return cmd
+        self._ptp4l_cfg_path = f'/tmp/ptp4l_{self.interface}.cfg'
+        with open(self._ptp4l_cfg_path, 'w') as f:
+            f.write('\n'.join(cfg_lines) + '\n')
+
+        return ['ptp4l', '-f', self._ptp4l_cfg_path, '-m']
 
     def _start_ptp(self):
         self.get_logger().info('=' * 50)
@@ -220,7 +223,11 @@ class PtpSyncNode(Node):
         self._start_phc2sys()
 
     def _start_phc2sys(self):
-        """phc2sys 将系统 CLOCK_REALTIME 同步到网卡 PHC（Master 方向）"""
+        """phc2sys 将系统 CLOCK_REALTIME 同步到网卡 PHC（仅硬件时间戳模式需要）"""
+        if not self._hw_ts:
+            self.get_logger().info('软件时间戳模式，跳过 phc2sys（无 PHC 设备）')
+            return
+
         cmd = [
             'phc2sys',
             '-s', 'CLOCK_REALTIME',   # 源：系统时钟
@@ -243,7 +250,11 @@ class PtpSyncNode(Node):
         t.start()
 
     def _read_ptp4l_output(self):
-        offset_pattern = re.compile(r'master offset\s+(-?\d+)\s+s(\d+)\s+freq')
+        # ptp4l 输出格式（软件时间戳 Master 模式）:
+        #   ptp4l[T]: [interface] master offset <ns> s<state> freq <ppb> path delay <ns>
+        #   ptp4l[T]: rms <ns> max <ns> freq <ppb> +/- <ppb> delay <ns> +/- <ns>
+        offset_pattern = re.compile(r'master offset\s+(-?\d+)\s+s(\d+)')
+        rms_pattern = re.compile(r'\brms\s+(\d+)\b')
         for line in self.ptp4l_proc.stdout:
             line = line.strip()
             if line:
@@ -253,6 +264,11 @@ class PtpSyncNode(Node):
                     self._offset_ns = int(m.group(1))
                     state = int(m.group(2))
                     self._is_synced = (state >= 2 and abs(self._offset_ns) < 1000)
+                    continue
+                # summary_interval 行（rms 格式）
+                m2 = rms_pattern.search(line)
+                if m2:
+                    self._offset_ns = int(m2.group(1))
 
     def _read_phc2sys_output(self):
         for line in self.phc2sys_proc.stdout:

@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import sys
+from typing import List
 
 import yaml
 
@@ -57,7 +58,7 @@ def check_interface(iface: str):
         print(f'  [警告] 无法查询时间戳能力（ethtool 未安装或权限不足）')
 
 
-def check_ntp_servers(servers: list[str], timeout: int = 5):
+def check_ntp_servers(servers: List[str], timeout: int = 5):
     print(f'\n[NTP 服务器连通性]')
     if not servers:
         print('  [警告] 服务器列表为空')

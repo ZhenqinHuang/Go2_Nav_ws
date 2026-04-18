@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>odom_tf_bridge</name>
+  <version>1.0.0</version>
+  <description>
+    将 FAST-LIO2 输出的里程计 (/Odometry, frame: camera_init → body)
+    转换为 NAV2 标准格式 (/odom, frame: odom → base_link)，
+    并广播 odom → base_link 的 TF 变换。
+    针对机器狗 Go2 + Jetson Orin NX 8GB 适配。
+  </description>
+  <maintainer email="wangzhenjie@robot.local">wangzhenjie</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_bringup</name>
+  <version>0.1.0</version>
+  <description>Go2 一键启动包：Livox MID360 驱动 + FAST-LIO2 + odom TF 桥接 + 点云转激光扫描</description>
+  <maintainer email="wangzheie@example.com">wangzheie</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>fast_lio</exec_depend>
+  <exec_depend>odom_tf_bridge</exec_depend>
+  <exec_depend>go2_pc2scan</exec_depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

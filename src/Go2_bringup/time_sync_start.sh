@@ -11,8 +11,8 @@ TIME_SYNC_DIR="${WS_ROOT}/src/Go2_time_sync"
 CONFIG_FILE="${TIME_SYNC_DIR}/config/ptp_sync.yaml"
 LIVOX_WS="/home/unitree/ws_Livox"
 
-LIDAR_IP="192.168.1.129"
-HOST_IP="192.168.1.50"
+LIDAR_IP="192.168.123.129"
+HOST_IP="192.168.123.99"
 NTP_SERVER="ntp.aliyun.com"
 PRINT_INTERVAL=5
 
@@ -22,10 +22,15 @@ if command -v python3 &>/dev/null && [[ -f "${CONFIG_FILE}" ]]; then
     HOST_IP="$(_y  "['lidar']['host_ip']" "${HOST_IP}")"
 fi
 
+# Auto-detect interface on 192.168.123.x subnet, fall back to eth0
+IFACE=$(ip -o -4 addr show | awk '$4 ~ /^192\.168\.123\./ {print $2; exit}')
+IFACE="${IFACE:-eth0}"
+
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 MONITOR_PID=""
+PTP4L_PID=""
 
 log()  { echo -e "${BOLD}[$(date '+%H:%M:%S')]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN $(date '+%H:%M:%S')]${NC} $*"; }
@@ -35,6 +40,7 @@ cleanup() {
     echo ""
     log "正在停止..."
     [[ -n "$MONITOR_PID" ]] && kill "$MONITOR_PID" 2>/dev/null || true
+    [[ -n "$PTP4L_PID"   ]] && kill "$PTP4L_PID"   2>/dev/null || true
     wait 2>/dev/null || true
     log "已退出"
 }
@@ -49,23 +55,58 @@ if [[ -f "${TIME_SYNC_DIR}/scripts/sync_host_time.py" ]]; then
         --config "${CONFIG_FILE}" || warn "NTP 校准失败，继续"
 fi
 
+# ── 步骤 2: 启动 ptp4l PTP Master ────────────────────────────────────────────
+echo -e "\n${CYAN}${BOLD}── 启动 PTP Master (ptp4l) ──${NC}"
+
+PTP4L_CFG="/tmp/ptp4l_${IFACE}.cfg"
+cat > "${PTP4L_CFG}" <<PTPCFG
+[global]
+domainNumber          0
+priority1             10
+priority2             10
+clockClass            135
+clockAccuracy         0xFE
+offsetScaledLogVariance 0xFFFF
+network_transport     UDPv4
+delay_mechanism       E2E
+time_stamping         software
+logSyncInterval       0
+logAnnounceInterval   1
+logMinDelayReqInterval 0
+announceReceiptTimeout 3
+twoStepFlag           1
+free_running          0
+summary_interval      1
+
+[${IFACE}]
+PTPCFG
+
+# 加入 PTP 组播组，确保雷达能收到 Announce/Sync 报文
+ip maddr add 224.0.1.129 dev "${IFACE}" 2>/dev/null || true
+ip maddr add 224.0.0.107 dev "${IFACE}" 2>/dev/null || true
+log "已加入 PTP 组播组 (接口=${IFACE})"
+
+ptp4l -f "${PTP4L_CFG}" -m >> /tmp/ptp4l.log 2>&1 &
+PTP4L_PID=$!
+log "ptp4l 已启动 (PID=${PTP4L_PID}, 接口=${IFACE}，日志: /tmp/ptp4l.log)"
+sleep 2
+
 # 清理 fastrtps 共享内存
 rm -f /dev/shm/fastrtps_* 2>/dev/null || true
 
-# ── 步骤 2: 状态监控 ──────────────────────────────────────────────────────────
+# ── 步骤 3: 状态监控 ──────────────────────────────────────────────────────────
 PYTHON_MONITOR=$(cat <<'PYEOF'
-import threading, time, datetime, socket, struct, os
+import time, datetime, socket, struct, os
 
-NTP_SERVER = os.environ.get("NTP_SERVER",      "ntp.aliyun.com")
+NTP_SERVER = os.environ.get("NTP_SERVER",   "ntp.aliyun.com")
 INTERVAL   = float(os.environ.get("PRINT_INTERVAL", "5"))
-HOST_IP    = os.environ.get("HOST_IP",         "192.168.1.50")
 
 RED="\033[0;31m"; YELLOW="\033[1;33m"; GREEN="\033[0;32m"
 CYAN="\033[0;36m"; BOLD="\033[1m"; NC="\033[0m"
 
 def color_off(ms):
     s = f"{ms:+.1f} ms"
-    if abs(ms) < 10:  return f"{GREEN}{s}{NC}"
+    if abs(ms) < 10:   return f"{GREEN}{s}{NC}"
     elif abs(ms) < 50: return f"{YELLOW}{s}{NC}"
     else:              return f"{RED}{s}{NC}"
 
@@ -89,39 +130,6 @@ def query_ntp(server, timeout=3):
     except Exception:
         return None, None
 
-_lock   = threading.Lock()
-_imu_ns = None
-_imu_hz = 0.0
-
-def _imu_poll():
-    global _imu_ns, _imu_hz
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    sock.bind((HOST_IP, 56401))
-    sock.settimeout(2.0)
-    recv_times = []
-    while True:
-        try:
-            data, _ = sock.recvfrom(4096)
-            t_recv = time.time()
-            if len(data) >= 36:
-                ts_ns = struct.unpack_from('<Q', data, 28)[0]
-                if 1_600_000_000 * 10**9 < ts_ns < 2_000_000_000 * 10**9:
-                    recv_times.append(t_recv)
-                    if len(recv_times) > 20:
-                        recv_times.pop(0)
-                    hz = (len(recv_times)-1)/(recv_times[-1]-recv_times[0]) if len(recv_times) >= 2 else 0.0
-                    with _lock:
-                        _imu_ns = ts_ns
-                        _imu_hz = hz
-        except socket.timeout:
-            pass
-        except Exception:
-            time.sleep(1)
-
-threading.Thread(target=_imu_poll, daemon=True).start()
-
 print(f"\n{BOLD}{'═'*60}{NC}")
 print(f"{BOLD}  Go2 时间监控{NC}  (NTP: {NTP_SERVER}  刷新: {INTERVAL}s)")
 print(f"{BOLD}{'═'*60}{NC}\n")
@@ -131,9 +139,6 @@ while True:
     iteration += 1
     t_host = time.time()
     t_ntp, rtt_ms = query_ntp(NTP_SERVER)
-    with _lock:
-        imu_ns = _imu_ns
-        imu_hz = _imu_hz
 
     if iteration % 20 == 1:
         print(f"\n{CYAN}{'─'*60}{NC}")
@@ -148,22 +153,12 @@ while True:
     else:
         print(f"  {'NTP':<10} {'─':<26} {RED}查询失败{NC}")
 
-    if imu_ns and imu_ns > 1_600_000_000 * 10**9:
-        lidar_unix = imu_ns / 1e9
-        off = (lidar_unix - t_host) * 1000
-        print(f"  {'MID360':<10} {fmt_ts(lidar_unix):<26} {color_off(off)}  IMU {imu_hz:.0f}Hz")
-    else:
-        print(f"  {'MID360':<10} {'─':<26} {YELLOW}等待数据...{NC}")
-
     print()
     time.sleep(INTERVAL)
 PYEOF
 )
 
-livox_setup=""
-[[ -f "${LIVOX_WS}/install/setup.bash" ]] && livox_setup="${LIVOX_WS}/install/setup.bash"
-
-NTP_SERVER="${NTP_SERVER}" PRINT_INTERVAL="${PRINT_INTERVAL}" HOST_IP="${HOST_IP}" \
+NTP_SERVER="${NTP_SERVER}" PRINT_INTERVAL="${PRINT_INTERVAL}" \
     python3 -c "${PYTHON_MONITOR}" &
 MONITOR_PID=$!
 log "监控已启动，按 Ctrl+C 停止"

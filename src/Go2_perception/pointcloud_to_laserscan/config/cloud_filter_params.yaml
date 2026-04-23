@@ -7,6 +7,10 @@
         # ── 话题配置 ─────────────────────────────────────────────────
         cloud_in_topic:  "/cloud_registered_body"  # FAST-LIO2 body 坐标系输出
         cloud_out_topic: "/cloud_filtered"          # 过滤后输出，供 pc2scan 使用
+        # /cloud_registered_body 的 frame_id 是 body。这里按 body≈base_link
+        # 直接改名为 base_link，避免 Nav2 订阅 /scan 时出现 body->base_link TF 缺失。
+        # 若后续发布了真实 body->base_link 静态 TF，可设为空字符串保留原始 frame。
+        output_frame: "base_link"
 
         # ── Body 坐标系高度切片 (z 轴向上) ───────────────────────────
         # 雷达安装：X=163mm, Y=0, Z=140mm, 倾斜13°（图纸实测）

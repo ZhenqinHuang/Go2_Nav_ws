@@ -7,6 +7,7 @@ LaserScan 转换由下游的 pointcloud_to_laserscan 节点负责。
 参数：
   cloud_in_topic    : 输入点云话题（默认 /cloud_registered_body）
   cloud_out_topic   : 输出点云话题（默认 /cloud_filtered）
+  output_frame      : 输出点云坐标系（默认 base_link；空字符串则保留输入 frame）
   z_min             : 最低保留高度 m（默认 -0.25）
   z_max             : 最高保留高度 m（默认  0.40）
   range_min         : 最小水平距离 m（默认 0.25）
@@ -35,9 +36,11 @@ def _pc2_to_xyz(msg: PointCloud2) -> np.ndarray:
     return np.column_stack([xs, ys, zs])
 
 
-def _xyz_to_pc2(xyz: np.ndarray, header) -> PointCloud2:
+def _xyz_to_pc2(xyz: np.ndarray, header, output_frame: str) -> PointCloud2:
     msg = PointCloud2()
     msg.header = header
+    if output_frame:
+        msg.header.frame_id = output_frame
     msg.height = 1
     msg.width = len(xyz)
     msg.is_dense = False
@@ -70,6 +73,7 @@ class CloudFilterNode(Node):
 
         self.declare_parameter('cloud_in_topic',   '/cloud_registered_body')
         self.declare_parameter('cloud_out_topic',  '/cloud_filtered')
+        self.declare_parameter('output_frame',     'base_link')
         self.declare_parameter('z_min',            -0.25)
         self.declare_parameter('z_max',             0.40)
         self.declare_parameter('range_min',         0.25)
@@ -78,6 +82,7 @@ class CloudFilterNode(Node):
 
         self._in_topic  = self.get_parameter('cloud_in_topic').value
         self._out_topic = self.get_parameter('cloud_out_topic').value
+        self._out_frame = self.get_parameter('output_frame').value
         self._z_min     = float(self.get_parameter('z_min').value)
         self._z_max     = float(self.get_parameter('z_max').value)
         self._r_min     = float(self.get_parameter('range_min').value)
@@ -105,6 +110,7 @@ class CloudFilterNode(Node):
             f'cloud_filter_node 已启动\n'
             f'  输入  : {self._in_topic}\n'
             f'  输出  : {self._out_topic}\n'
+            f'  输出坐标系: {self._out_frame or "保留输入frame"}\n'
             f'  高度切片: z ∈ [{self._z_min}, {self._z_max}] m\n'
             f'  水平范围: [{self._r_min}, {self._r_max}] m\n'
             f'  体素降采: {self._voxel} m'
@@ -131,7 +137,7 @@ class CloudFilterNode(Node):
             return
 
         xyz = _voxel_downsample(xyz, self._voxel)
-        self._cloud_pub.publish(_xyz_to_pc2(xyz, msg.header))
+        self._cloud_pub.publish(_xyz_to_pc2(xyz, msg.header, self._out_frame))
 
         self.get_logger().debug(
             f'点云过滤: {msg.width * msg.height} → {len(xyz)} 点',

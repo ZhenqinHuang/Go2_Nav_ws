@@ -66,11 +66,13 @@ err() {
 cleanup() {
     echo ""
     log "停止 Go2 导航启动链路..."
-    # 先用 SIGTERM 通知各进程组优雅退出
+
+    # 第一轮：SIGTERM 各进程组
     for pgid in "${PGIDS[@]}"; do
         kill -- "-${pgid}" 2>/dev/null || true
     done
-    # 等待最多 5 秒让进程自行退出
+
+    # 等待最多 5 秒
     local deadline=$(( $(date +%s) + 5 ))
     while (( $(date +%s) < deadline )); do
         local alive=0
@@ -80,10 +82,20 @@ cleanup() {
         (( alive == 0 )) && break
         sleep 0.5
     done
-    # 仍存活的进程组强制 SIGKILL
+
+    # 第二轮：SIGKILL 各进程组
     for pgid in "${PGIDS[@]}"; do
         kill -9 -- "-${pgid}" 2>/dev/null || true
     done
+
+    # 兜底：按进程名强制清理 ros2 launch fork 出的子进程
+    pkill -9 -f "livox_ros_driver2_node"  2>/dev/null || true
+    pkill -9 -f "laser_mapping"           2>/dev/null || true
+    pkill -9 -f "odom_tf_bridge_node"     2>/dev/null || true
+    pkill -9 -f "cloud_filter_node"       2>/dev/null || true
+    pkill -9 -f "pointcloud_to_laserscan_node" 2>/dev/null || true
+    pkill -9 -f "static_transform_publisher"   2>/dev/null || true
+
     wait 2>/dev/null || true
     log "已退出"
 }

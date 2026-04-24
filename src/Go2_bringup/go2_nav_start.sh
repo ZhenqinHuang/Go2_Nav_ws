@@ -39,6 +39,7 @@ LOG_DIR="${LOG_DIR:-/tmp/go2_nav_bringup}"
 mkdir -p "${LOG_DIR}"
 
 PIDS=()
+PGIDS=()
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -65,10 +66,23 @@ err() {
 cleanup() {
     echo ""
     log "停止 Go2 导航启动链路..."
-    for pid in "${PIDS[@]}"; do
-        if kill -0 "${pid}" 2>/dev/null; then
-            kill "${pid}" 2>/dev/null || true
-        fi
+    # 先用 SIGTERM 通知各进程组优雅退出
+    for pgid in "${PGIDS[@]}"; do
+        kill -- "-${pgid}" 2>/dev/null || true
+    done
+    # 等待最多 5 秒让进程自行退出
+    local deadline=$(( $(date +%s) + 5 ))
+    while (( $(date +%s) < deadline )); do
+        local alive=0
+        for pid in "${PIDS[@]}"; do
+            kill -0 "${pid}" 2>/dev/null && alive=1 && break
+        done
+        (( alive == 0 )) && break
+        sleep 0.5
+    done
+    # 仍存活的进程组强制 SIGKILL
+    for pgid in "${PGIDS[@]}"; do
+        kill -9 -- "-${pgid}" 2>/dev/null || true
     done
     wait 2>/dev/null || true
     log "已退出"
@@ -84,8 +98,12 @@ source_if_exists() {
         exit 1
     fi
 
+    # ROS setup scripts reference variables (e.g. AMENT_TRACE_SETUP_FILES) that
+    # may be unset; temporarily disable -u to avoid spurious "unbound variable" errors.
+    set +u
     # shellcheck source=/dev/null
     source "${setup_file}"
+    set -u
     ok "已 source ${label}: ${setup_file}"
 }
 
@@ -158,10 +176,14 @@ start_background() {
     shift 2
 
     log "启动 ${name}，日志: ${log_file}"
-    "$@" >"${log_file}" 2>&1 &
+    # setsid 让子进程成为新进程组组长，方便后续整组 kill
+    setsid "$@" >"${log_file}" 2>&1 &
     local pid=$!
+    local pgid
+    pgid=$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ') || pgid="${pid}"
     PIDS+=("${pid}")
-    ok "${name} 已启动，PID=${pid}"
+    PGIDS+=("${pgid}")
+    ok "${name} 已启动，PID=${pid} PGID=${pgid}"
 }
 
 print_status() {

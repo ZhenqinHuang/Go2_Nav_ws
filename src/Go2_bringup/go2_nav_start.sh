@@ -92,6 +92,7 @@ cleanup() {
     # 兜底：按进程名强制清理 ros2 launch fork 出的子进程
     pkill -9 -f "livox_ros_driver2_node"  2>/dev/null || true
     pkill -9 -f "laser_mapping"           2>/dev/null || true
+    pkill -9 -f "hdl_global_localization_container" 2>/dev/null || true
     pkill -9 -f "hdl_localization_nodelet_manager" 2>/dev/null || true
     pkill -9 -f "odom_tf_bridge_node"     2>/dev/null || true
     pkill -9 -f "cloud_filter_node"       2>/dev/null || true
@@ -206,7 +207,7 @@ print_status() {
 
     echo -e "\n${BOLD}节点:${NC}"
     ros2 node list 2>/dev/null | grep -E \
-        'livox_lidar_publisher|fastlio|HdlLocalizationNodelet|GlobalmapServerNodelet|odom_tf_bridge|cloud_filter|pointcloud_to_laserscan' \
+        'livox_lidar_publisher|fastlio|HdlLocalizationNodelet|GlobalmapServerNodelet|hdl_global_localization|odom_tf_bridge|cloud_filter|pointcloud_to_laserscan' \
         || warn "未匹配到预期节点"
 
     echo -e "\n${BOLD}话题:${NC}"

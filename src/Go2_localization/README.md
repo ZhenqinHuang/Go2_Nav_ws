@@ -14,7 +14,7 @@ MID360 LiDAR + IMU
         ├─ /Odometry ──────────────> odom_tf_bridge ──> odom -> base_link TF
         │
         └─ /cloud_registered_body ─> hdl-localization ──> map -> odom TF
-           (去畸变点云, frame_id=body)   (NDT 地图匹配)
+           (去畸变点云, frame_id=body)   (NDT 地图匹配 + 全局重定位)
 ```
 
 **TF 树：**
@@ -33,16 +33,19 @@ map ──(hdl-localization)──> odom ──(odom_tf_bridge)──> base_link
 Go2_localization/
 ├── README.md
 ├── maps/                          # 地图文件目录（PCD 格式）
-│   └── map.pcd                    # 建图后放置于此（当前为空）
+├── PCD/
+│   └── MID360.pcd                 # 默认全局地图（MID360 建图结果）
 ├── odom_tf_bridge/                # FAST-LIO2 里程计 → NAV2 适配桥
 │   ├── config/odom_bridge_params.yaml
 │   ├── launch/odom_bridge.launch.py
 │   └── README.md
-└── hdl-localization-ROS2/         # 点云地图重定位（NDT-OMP）
-    └── hdl_localization/
-        └── launch/
-            ├── hdl_localization_go2.launch.py   # Go2 专用 ← 使用此文件
-            └── hdl_localization_turtlebot.launch.py
+└── hdl-localization/              # 点云地图重定位（NDT-OMP + 全局定位）
+    ├── hdl_localization/
+    │   ├── launch/hdl_localization_go2.launch.py   # Go2 专用 ← 使用此文件
+    │   └── config/hdl_go2_params.yaml
+    ├── hdl_global_localization/   # 全局重定位子包（BBS/RANSAC）
+    ├── fast_gicp/
+    └── ndt_omp/
 ```
 
 ---
@@ -55,15 +58,16 @@ Go2_localization/
 
 详见 [odom_tf_bridge/README.md](odom_tf_bridge/README.md)
 
-### hdl-localization-ROS2
+### hdl-localization
 
-基于 NDT-OMP 的点云地图定位。订阅 `/cloud_registered_body`（FAST-LIO2 去畸变点云），与预建 PCD 地图匹配，发布 `map -> odom` TF。
+基于 NDT-OMP 的点云地图定位，包含四个 ROS2 包：
 
-Go2 专用 launch 文件：[hdl_localization_go2.launch.py](hdl-localization-ROS2/hdl_localization/launch/hdl_localization_go2.launch.py)
+- `hdl_localization`：主定位节点，NDT 匹配 + UKF 位姿估计
+- `hdl_global_localization`：全局重定位（BBS/RANSAC/FPFH），用于初始位姿未知时的自动定位
+- `ndt_omp`：NDT OpenMP 并行加速库
+- `fast_gicp`：快速 GICP/VGICP 库
 
-### maps/
-
-存放 PCD 格式的全局地图文件。地图由 FAST-LIO2 建图模式生成后保存至此目录。
+`hdl_localization_go2.launch.py` 会同时启动 `hdl_global_localization` 和 `hdl_localization` 两个容器，无需单独启动全局定位节点。
 
 ---
 
@@ -72,72 +76,87 @@ Go2 专用 launch 文件：[hdl_localization_go2.launch.py](hdl-localization-ROS
 ### 1. 编译
 
 ```bash
-cd /home/wangzhenjie/Go2_Nav_ws
-colcon build --packages-select odom_tf_bridge hdl_localization ndt_omp fast_gicp hdl_global_localization
+cd /home/unitree/Go2_Nav_ws
+colcon build --packages-select ndt_omp fast_gicp hdl_global_localization hdl_localization odom_tf_bridge
 source install/setup.bash
 ```
+
+> 首次编译若遇到 `hdl_global_localization` 报空头文件错误，先单独编译它再编译其余包：
+> ```bash
+> colcon build --packages-select hdl_global_localization
+> colcon build --packages-select ndt_omp fast_gicp hdl_localization
+> ```
 
 ### 2. 准备地图
 
 将 FAST-LIO2 建图生成的 PCD 文件放到：
 
 ```
-src/Go2_localization/maps/map.pcd
+src/Go2_localization/PCD/MID360.pcd
 ```
 
-### 3. 启动顺序
+### 3. 启动（推荐：一键脚本）
 
 ```bash
-# 终端 1：FAST-LIO2（发布 /cloud_registered_body 和里程计）
-ros2 launch fast_lio mapping_mid360.launch.py
+bash src/Go2_bringup/go2_nav_start.sh
+```
 
-# 终端 2：odom_tf_bridge（odom -> base_link TF）
-ros2 launch odom_tf_bridge odom_bridge.launch.py
+脚本会按顺序启动：Livox → FAST-LIO2 → hdl-localization（含全局定位）→ odom_tf_bridge → go2_pc2scan，并等待每步就绪后再继续。
 
-# 终端 3：hdl-localization（map -> odom TF）
+### 4. 手动分步启动
+
+```bash
+# 终端 1：FAST-LIO2
+ros2 launch fast_lio mapping.launch.py config_path:=... config_file:=mid360.yaml
+
+# 终端 2：hdl-localization + hdl_global_localization（合并在同一 launch）
 ros2 launch hdl_localization hdl_localization_go2.launch.py \
-    globalmap_pcd:=/home/wangzhenjie/Go2_Nav_ws/src/Go2_localization/maps/map.pcd
+    globalmap_pcd:=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd
+
+# 终端 3：odom_tf_bridge
+ros2 launch odom_tf_bridge odom_bridge.launch.py
 ```
 
-### 4. 验证 TF 树
+### 5. 验证
 
 ```bash
+# 检查 TF 树是否完整
 ros2 run tf2_ros tf2_echo map base_link
-ros2 run rqt_tf_tree rqt_tf_tree
+
+# 检查定位输出
+ros2 topic hz /hdl_pose
+
+# 检查 NDT 匹配质量（fitness_score 应 < 1.0）
+ros2 topic echo /status
 ```
 
 ---
 
-## 参数调整
+## 参数说明
 
-### 初始位姿（非地图原点启动时）
+主要参数在 `hdl-localization/hdl_localization/config/hdl_go2_params.yaml`：
 
-```bash
-ros2 launch hdl_localization hdl_localization_go2.launch.py \
-    globalmap_pcd:=.../map.pcd \
-    init_pos_x:=1.5 \
-    init_pos_y:=2.0 \
-    init_ori_w:=0.707 \
-    init_ori_z:=0.707
-```
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `reg_method` | `NDT_OMP` | 匹配算法 |
+| `ndt_resolution` | `0.5` | NDT 体素大小（m） |
+| `downsample_resolution` | `0.2` | 输入点云降采样（m） |
+| `enable_robot_odometry_prediction` | `true` | 利用 odom TF 做帧间预测 |
+| `use_imu` | `false` | 关闭 IMU（FAST-LIO2 已融合） |
+| `use_global_localization` | `true` | 启用全局重定位服务 |
+| `cool_time_duration` | `2.0` | 冷启动等待时间（s） |
+
+全局地图降采样分辨率（`GlobalmapServerNodelet`）在 launch 文件中内联设置为 `0.1`。
 
 ### 运行中手动重定位
 
-通过 RViz 的 "2D Pose Estimate" 工具，或命令行：
+触发全局重定位服务：
 
 ```bash
-ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
-    "{header: {frame_id: map}, pose: {pose: {position: {x: 1.0, y: 2.0}, orientation: {w: 1.0}}}}" --once
+ros2 service call /relocalize std_srvs/srv/Empty
 ```
 
-### NDT 参数（hdl_localization_go2.launch.py）
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `ndt_resolution` | `0.5` | NDT 体素大小（m），越小精度越高但越慢 |
-| `downsample_resolution` | `0.1` | 输入点云降采样分辨率（m） |
-| `ndt_neighbor_search_method` | `DIRECT7` | 邻域搜索方式 |
-| `cool_time_duration` | `2.0` | 冷启动等待时间（s） |
+或通过 RViz 的 "2D Pose Estimate" 工具直接给定初始位姿。
 
 ---
 
@@ -145,39 +164,37 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 ### 为什么用 /cloud_registered_body
 
-FAST-LIO2 的 `/cloud_registered_body` 经过 IMU 去畸变，补偿了扫描过程中的运动，比原始点云更适合地图匹配，定位精度更高。
+FAST-LIO2 的 `/cloud_registered_body` 经过 IMU 去畸变，补偿了扫描过程中的运动，比原始点云更适合地图匹配。
 
-### body -> base_link 静态 TF
+### hdl_global_localization 集成
 
-`/cloud_registered_body` 的 `frame_id = "body"`，hdl-localization 需要将点云变换到 `base_link`。由于 `odom_bridge_params.yaml` 中 body 与 base_link 偏移为零，launch 文件发布一个 identity 静态 TF 完成对齐。
+`use_global_localization: true` 时，`HdlLocalizationNodelet` 启动会等待全局定位服务就绪。`hdl_localization_go2.launch.py` 已将 `hdl_global_localization` 容器集成在内，两者同步启动，无需手动管理依赖顺序。
 
-### 里程计预测（enable_robot_odometry_prediction）
+### 里程计预测
 
-hdl-localization 利用 `odom -> base_link` TF 做帧间运动预测，作为 NDT 匹配的初始猜测，显著减少迭代次数，提升实时性。
+hdl-localization 利用 `odom -> base_link` TF 做帧间运动预测，作为 NDT 匹配的初始猜测，减少迭代次数，提升实时性。
 
 ### TF 广播来源
 
 | TF | 广播者 |
 |---|---|
-| `camera_init -> body` | FAST-LIO2 自身 |
+| `camera_init -> body` | FAST-LIO2 |
 | `odom -> base_link` | odom_tf_bridge |
-| `body -> base_link` | hdl_localization_go2.launch.py（静态，identity） |
 | `map -> odom` | hdl-localization |
 
 ---
 
 ## 常见问题
 
-**Q：hdl-localization 报 `point cloud cannot be transformed into target frame`**
-- 确认 `body -> base_link` 静态 TF 已发布：`ros2 run tf2_ros tf2_echo body base_link`
+**Q：`point cloud cannot be transformed into target frame`**
+- 确认 `odom -> base_link` TF 已发布：`ros2 run tf2_ros tf2_echo odom base_link`
 - 确认 FAST-LIO2 正在发布 `/cloud_registered_body`：`ros2 topic hz /cloud_registered_body`
 
-**Q：`map -> odom` TF 不更新**
-- 确认地图文件路径正确，节点启动时会打印加载信息
-- 检查 NDT 匹配是否收敛：`ros2 topic echo /status`（fitness score 应 < 1.0）
-- 尝试通过 RViz 手动给定初始位姿
+**Q：`map -> odom` TF 不更新 / 节点卡在等待服务**
+- 确认 `hdl_global_localization` 节点已启动（使用新版 launch 文件会自动启动）
+- 确认地图文件路径正确，节点启动时会打印加载路径
 
 **Q：定位漂移或跳变**
 - 增大 `cool_time_duration` 让初始匹配更稳定
-- 检查地图质量（点云密度、覆盖范围）
-- 调小 `ndt_resolution`（如 0.3）提升精度，但会增加计算量
+- 调小 `ndt_resolution`（如 `0.3`）提升精度，但会增加计算量
+- 调用 `/relocalize` 服务触发全局重定位重置位姿

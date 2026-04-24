@@ -13,7 +13,7 @@
         # ── 坐标帧 ──────────────────────────────────────────────────
         # target_frame 为空字符串时使用点云自带 frame_id（即 base_link/body）
         # 若需要在 odom 或 map 帧生成 scan，填对应 frame_id
-        target_frame: ""       # 空 = 使用点云原始坐标系（base_link）
+        target_frame: "base_link"  # /scan 投影到 base_link，Nav2 标准坐标系
         transform_tolerance: 0.05  # TF 查询容差 (s)
 
         # ── 投影范围 ─────────────────────────────────────────────────

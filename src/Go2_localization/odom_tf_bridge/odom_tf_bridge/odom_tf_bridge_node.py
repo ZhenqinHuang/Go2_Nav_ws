@@ -123,8 +123,15 @@ class OdomTfBridgeNode(Node):
         self._default_cov = _make_default_covariance(pos_cov, rot_cov)
 
         # ── QoS ─────────────────────────────────────────────────
-        # FAST-LIO2 使用 reliable；NAV2 也推荐 reliable
-        reliable_qos = QoSProfile(
+        # FAST-LIO2 以 BEST_EFFORT 发布 /Odometry，订阅端必须匹配
+        sub_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            depth=10,
+        )
+        # NAV2 推荐 RELIABLE
+        pub_qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             durability=QoSDurabilityPolicy.VOLATILE,
@@ -133,7 +140,7 @@ class OdomTfBridgeNode(Node):
 
         # ── 发布器 / TF ─────────────────────────────────────────
         self._odom_pub = self.create_publisher(
-            Odometry, self._out_topic, reliable_qos)
+            Odometry, self._out_topic, pub_qos)
 
         if self._pub_tf:
             self._tf_broadcaster = TransformBroadcaster(self)
@@ -141,7 +148,7 @@ class OdomTfBridgeNode(Node):
         # ── 订阅器 ───────────────────────────────────────────────
         self._sub = self.create_subscription(
             Odometry, self._in_topic,
-            self._odom_callback, reliable_qos)
+            self._odom_callback, sub_qos)
 
         self.get_logger().info(
             f'odom_tf_bridge_node 已启动\n'

@@ -38,7 +38,7 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 ```
 MID360 硬件时钟 (PTP Slave 同步到主机)
   ↓ Livox 驱动提取硬件时间戳
-/Odometry.header.stamp, /cloud_registered_body.header.stamp
+/Odometry.header.stamp, /cloud_registered.header.stamp, /cloud_registered_body.header.stamp
   ↓ odom_tf_bridge 透传时间戳
 /odom.header.stamp
   ↓ transform_fusion 使用 /odom 时间戳广播 TF

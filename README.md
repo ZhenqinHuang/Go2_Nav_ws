@@ -103,6 +103,8 @@ sudo apt install linuxptp ethtool
 
 ### 2. 编译
 
+`src/Go2_perception/LI_Init_calibration` 是 ROS1 catkin 包，已通过 `COLCON_IGNORE` 跳过，直接整仓编译即可：
+
 ```bash
 cd ~/Go2_Nav_ws
 colcon build --symlink-install

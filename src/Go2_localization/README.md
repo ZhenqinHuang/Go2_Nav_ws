@@ -72,8 +72,7 @@ Go2_localization/
 │   └── README.md
 └── fast_lio_localization_ros2/            # ICP 点云地图定位与全局重定位
     ├── launch/
-    │   ├── localize_go2.launch.py         # Go2 专用 ← 使用此文件
-    │   └── localize.launch.py             # 通用版本
+    │   └── localize_go2.launch.py         # Go2 专用
     ├── scripts/
     │   ├── pcd_publisher.py              # 加载 PCD 文件并发布为 /map3d
     │   ├── global_localization_ros2.py   # ICP 重定位，发布 /map_to_odom
@@ -102,11 +101,13 @@ Go2_localization/
 - TRANSIENT_LOCAL 确保后启动的订阅者也能收到地图
 
 #### global_localization
-- 订阅 `/cloud_registered_body`（remapping 为 `/cloud_registered`，BEST_EFFORT）
-- 订阅 `/Odometry`（remapping 为 `/odom`，BEST_EFFORT）——注意：直接使用 FAST-LIO2 原始里程计
+- 订阅 `/cloud_registered`（**world 坐标系**点云，frame_id=`camera_init`，BEST_EFFORT）
+- 订阅 `/Odometry`（remapping 为 `/odom`，BEST_EFFORT）——直接使用 FAST-LIO2 原始里程计
 - 订阅 `/map3d`（全局地图，RELIABLE）
 - 用 open3d ICP 做多尺度点云匹配（5× 粗配 + 1× 精配）
 - 发布 `/map_to_odom`（`map` → `odom` 的 4×4 变换，约 0.5 Hz）
+
+> **为何必须用 `/cloud_registered` 而非 `/cloud_registered_body`**：ICP 的 target 是 map 帧子图，initial 是 T_map_to_odom。若 source（scan）在 world/odom 帧，ICP 结果直接就是 T_map_to_odom；若 source 在 body 帧，ICP 结果是 T_map_to_body，被错误存入 T_map_to_odom，随机器人移动持续漂移。`/cloud_registered` 由 FAST-LIO2 经 `RGBpointBodyToWorld` 变换后以 `frame_id="camera_init"` 发布，是真正的 world 帧。
 
 **ICP 参数（localize_go2.launch.py）：**
 
@@ -120,12 +121,12 @@ Go2_localization/
 | `localization_th` | 0.997 | ICP 拟合度阈值（99.7% 点对应） |
 
 #### transform_fusion
-- 订阅 `/odom`（remapping 为 `/Odometry`，FAST-LIO2 原始里程计）
+- 订阅 `/odom`（来自 odom_tf_bridge，RELIABLE）——不 remap，QoS 必须匹配
 - 订阅 `/map_to_odom`（ICP 结果，RELIABLE）
 - 以 100 Hz 高频广播 `map→odom` TF（时间戳跟随 `/odom`）
 - 计算 `T_map→base_link = T_map→odom × T_odom→base_link` 并发布 `/localization`
 
-> **设计说明**：transform_fusion 和 global_localization 均通过 remapping 直接订阅 FAST-LIO2 的 `/Odometry`（camera_init→body），而非 odom_tf_bridge 的 `/odom`。这是有意设计——camera_init ≡ odom、body ≡ base_link，坐标等价，直接使用原始数据跳过一次转换，且保留 BEST_EFFORT QoS 匹配 FAST-LIO2。
+> **QoS 说明**：transform_fusion 用 RELIABLE QoS 订阅 `/odom`，若 remap 到 FAST-LIO2 的 `/Odometry`（BEST_EFFORT），ROS 2 QoS 不兼容，消息完全收不到。因此 transform_fusion 直接订阅 odom_tf_bridge 的 `/odom`（RELIABLE）。global_localization 则用 BEST_EFFORT 订阅 `/Odometry`，两者来源不同但数据等价（camera_init ≡ odom，body ≡ base_link）。
 
 ---
 

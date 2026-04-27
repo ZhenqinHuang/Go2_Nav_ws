@@ -8,7 +8,7 @@ LaserScan 转换由下游的 pointcloud_to_laserscan 节点负责。
   cloud_in_topic    : 输入点云话题（默认 /cloud_registered_body）
   cloud_out_topic   : 输出点云话题（默认 /cloud_filtered）
   output_frame      : 输出点云坐标系（默认 base_link；空字符串则保留输入 frame）
-  z_min             : 最低保留高度 m（默认 -0.25）
+  z_min             : 最低保留高度 m（默认 -0.30）
   z_max             : 最高保留高度 m（默认  0.40）
   range_min         : 最小水平距离 m（默认 0.25）
   range_max         : 最大水平距离 m（默认 12.0）
@@ -74,7 +74,7 @@ class CloudFilterNode(Node):
         self.declare_parameter('cloud_in_topic',   '/cloud_registered_body')
         self.declare_parameter('cloud_out_topic',  '/cloud_filtered')
         self.declare_parameter('output_frame',     'base_link')
-        self.declare_parameter('z_min',            -0.25)
+        self.declare_parameter('z_min',            -0.30)
         self.declare_parameter('z_max',             0.40)
         self.declare_parameter('range_min',         0.25)
         self.declare_parameter('range_max',        12.0)

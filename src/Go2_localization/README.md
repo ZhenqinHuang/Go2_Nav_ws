@@ -1,6 +1,6 @@
 # Go2_localization
 
-Go2 机器狗定位模块，基于 **FAST-LIO2 + hdl-localization** 实现 LiDAR-IMU 里程计与点云地图重定位。
+Go2 机器狗定位模块，基于 **FAST-LIO2 + fast_lio_localization_ros2** 实现 LiDAR-IMU 里程计与 PCD 地图点云重定位。
 
 ---
 
@@ -10,20 +10,52 @@ Go2 机器狗定位模块，基于 **FAST-LIO2 + hdl-localization** 实现 LiDAR
 MID360 LiDAR + IMU
         │
    FAST-LIO2 (LiDAR-IMU 紧耦合里程计)
+        │  /Odometry (camera_init→body, BEST_EFFORT, 10 Hz)
+        │  /cloud_registered_body (body 坐标系点云, BEST_EFFORT, 10 Hz)
         │
-        ├─ /Odometry ──────────────> odom_tf_bridge ──> odom -> base_link TF
+        ├─ /Odometry ──────────────> odom_tf_bridge
+        │                            ├─ 重命名: camera_init→odom, body→base_link
+        │                            ├─ 补充协方差默认值
+        │                            ├─ 发布 /odom (RELIABLE, 10 Hz)
+        │                            └─ 广播 TF: odom→base_link (10 Hz)
         │
-        └─ /cloud_registered_body ─> hdl-localization ──> map -> odom TF
-           (去畸变点云, frame_id=body)   (NDT 地图匹配 + 全局重定位)
+        └─ /cloud_registered_body ─> fast_lio_localization_ros2
+                                     ├─ pcd_publisher: 发布 /map3d (1 Hz, TRANSIENT_LOCAL)
+                                     ├─ global_localization: ICP
+                                      地图匹配 → /map_to_odom (0.5 Hz)
+                                     └─ transform_fusion: map→odom TF (100 Hz) + /localization
 ```
 
-**TF 树：**
+**完整 TF 树：**
 ```
-map ──(hdl-localization)──> odom ──(odom_tf_bridge)──> base_link
+map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)──> base_link
 ```
 
-- `odom -> base_link`：FAST-LIO2 + odom_tf_bridge 维护，高频连续
-- `map -> odom`：hdl-localization 维护，基于 PCD 地图匹配，修正累积漂移
+---
+
+## 时间链路
+
+```
+MID360 硬件时钟 (PTP Slave 同步到主机)
+  ↓ Livox 驱动提取硬件时间戳
+/Odometry.header.stamp, /cloud_registered_body.header.stamp
+  ↓ odom_tf_bridge 透传时间戳
+/odom.header.stamp
+  ↓ transform_fusion 使用 /odom 时间戳广播 TF
+map→odom TF.header.stamp = /odom.stamp
+```
+
+所有 TF 的时间戳与里程计时间戳保持一致，避免 TF 查询时间不匹配错误。
+
+---
+
+## 坐标系关系
+
+| FAST-LIO2 帧 | Nav2 帧 | 说明 |
+|---|---|---|
+| `camera_init` | `odom` | FAST-LIO2 起点帧，等价于里程计参考帧 |
+| `body` | `base_link` | IMU/机体帧，Go2 偏差 < 5 cm，可视为等价 |
+| (无，由地图匹配产生) | `map` | 全局地图帧，由 ICP 定位后产生 |
 
 ---
 
@@ -32,20 +64,22 @@ map ──(hdl-localization)──> odom ──(odom_tf_bridge)──> base_link
 ```
 Go2_localization/
 ├── README.md
-├── maps/                          # 地图文件目录（PCD 格式）
 ├── PCD/
-│   └── MID360.pcd                 # 默认全局地图（MID360 建图结果）
-├── odom_tf_bridge/                # FAST-LIO2 里程计 → NAV2 适配桥
-│   ├── config/odom_bridge_params.yaml
+│   └── MID360.pcd                        # 全局地图（FAST-LIO2 建图结果）
+├── odom_tf_bridge/                        # FAST-LIO2 里程计 → Nav2 适配桥
+│   ├── config/odom_bridge_params.yaml     # 节点参数
 │   ├── launch/odom_bridge.launch.py
 │   └── README.md
-└── hdl-localization/              # 点云地图重定位（NDT-OMP + 全局定位）
-    ├── hdl_localization/
-    │   ├── launch/hdl_localization_go2.launch.py   # Go2 专用 ← 使用此文件
-    │   └── config/hdl_go2_params.yaml
-    ├── hdl_global_localization/   # 全局重定位子包（BBS/RANSAC）
-    ├── fast_gicp/
-    └── ndt_omp/
+└── fast_lio_localization_ros2/            # ICP 点云地图定位与全局重定位
+    ├── launch/
+    │   ├── localize_go2.launch.py         # Go2 专用 ← 使用此文件
+    │   └── localize.launch.py             # 通用版本
+    ├── scripts/
+    │   ├── pcd_publisher.py              # 加载 PCD 文件并发布为 /map3d
+    │   ├── global_localization_ros2.py   # ICP 重定位，发布 /map_to_odom
+    │   └── transform_fusion_ros2.py      # 融合里程计与重定位，广播 map→odom TF
+    └── PCD/
+        └── MID360.pcd -> ../PCD/MID360.pcd  # 软链接
 ```
 
 ---
@@ -54,20 +88,53 @@ Go2_localization/
 
 ### odom_tf_bridge
 
-将 FAST-LIO2 输出的 `/Odometry`（`camera_init -> body`）转换为 NAV2 标准格式，广播 `odom -> base_link` TF。
+将 FAST-LIO2 输出的 `/Odometry`（`camera_init → body`，BEST_EFFORT）转换为 Nav2 标准格式，广播 `odom → base_link` TF，发布 `/odom`（RELIABLE）。
 
-详见 [odom_tf_bridge/README.md](odom_tf_bridge/README.md)
+协方差处理：FAST-LIO2 不填充协方差字段（全零），odom_tf_bridge 为 Nav2 补充默认值（位置 0.01 m²，姿态 0.005 rad²）。
 
-### hdl-localization
+### fast_lio_localization_ros2
 
-基于 NDT-OMP 的点云地图定位，包含四个 ROS2 包：
+三个节点协同工作，均通过 `localize_go2.launch.py` 启动：
 
-- `hdl_localization`：主定位节点，NDT 匹配 + UKF 位姿估计
-- `hdl_global_localization`：全局重定位（BBS/RANSAC/FPFH），用于初始位姿未知时的自动定位
-- `ndt_omp`：NDT OpenMP 并行加速库
-- `fast_gicp`：快速 GICP/VGICP 库
+#### pcd_publisher
+- 加载 `PCD/MID360.pcd` 文件
+- 发布 `/map3d`（frame_id = `map`，TRANSIENT_LOCAL，1 Hz）
+- TRANSIENT_LOCAL 确保后启动的订阅者也能收到地图
 
-`hdl_localization_go2.launch.py` 会同时启动 `hdl_global_localization` 和 `hdl_localization` 两个容器，无需单独启动全局定位节点。
+#### global_localization
+- 订阅 `/cloud_registered_body`（remapping 为 `/cloud_registered`，BEST_EFFORT）
+- 订阅 `/Odometry`（remapping 为 `/odom`，BEST_EFFORT）——注意：直接使用 FAST-LIO2 原始里程计
+- 订阅 `/map3d`（全局地图，RELIABLE）
+- 用 open3d ICP 做多尺度点云匹配（5× 粗配 + 1× 精配）
+- 发布 `/map_to_odom`（`map` → `odom` 的 4×4 变换，约 0.5 Hz）
+
+**ICP 参数（localize_go2.launch.py）：**
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `map_voxel_size` | 0.2 m | 地图体素大小 |
+| `scan_voxel_size` | 0.1 m | 扫描体素大小 |
+| `fov` | 6.28 (360°) | MID360 全视角 |
+| `fov_far` | 15.0 m | 地图裁剪距离（仅保留近处地图点用于 ICP） |
+| `freq_localization` | 0.5 Hz | 重定位频率 |
+| `localization_th` | 0.997 | ICP 拟合度阈值（99.7% 点对应） |
+
+#### transform_fusion
+- 订阅 `/odom`（remapping 为 `/Odometry`，FAST-LIO2 原始里程计）
+- 订阅 `/map_to_odom`（ICP 结果，RELIABLE）
+- 以 100 Hz 高频广播 `map→odom` TF（时间戳跟随 `/odom`）
+- 计算 `T_map→base_link = T_map→odom × T_odom→base_link` 并发布 `/localization`
+
+> **设计说明**：transform_fusion 和 global_localization 均通过 remapping 直接订阅 FAST-LIO2 的 `/Odometry`（camera_init→body），而非 odom_tf_bridge 的 `/odom`。这是有意设计——camera_init ≡ odom、body ≡ base_link，坐标等价，直接使用原始数据跳过一次转换，且保留 BEST_EFFORT QoS 匹配 FAST-LIO2。
+
+---
+
+## 依赖安装
+
+```bash
+sudo apt install ros-foxy-tf-transformations
+pip3 install open3d "numpy<2"
+```
 
 ---
 
@@ -76,16 +143,10 @@ Go2_localization/
 ### 1. 编译
 
 ```bash
-cd /home/unitree/Go2_Nav_ws
-colcon build --packages-select ndt_omp fast_gicp hdl_global_localization hdl_localization odom_tf_bridge
+cd ~/Go2_Nav_ws
+colcon build --packages-select fast_lio_localization_ros2 odom_tf_bridge
 source install/setup.bash
 ```
-
-> 首次编译若遇到 `hdl_global_localization` 报空头文件错误，先单独编译它再编译其余包：
-> ```bash
-> colcon build --packages-select hdl_global_localization
-> colcon build --packages-select ndt_omp fast_gicp hdl_localization
-> ```
 
 ### 2. 准备地图
 
@@ -101,100 +162,73 @@ src/Go2_localization/PCD/MID360.pcd
 bash src/Go2_bringup/go2_nav_start.sh
 ```
 
-脚本会按顺序启动：Livox → FAST-LIO2 → hdl-localization（含全局定位）→ odom_tf_bridge → go2_pc2scan，并等待每步就绪后再继续。
-
 ### 4. 手动分步启动
 
 ```bash
 # 终端 1：FAST-LIO2
-ros2 launch fast_lio mapping.launch.py config_path:=... config_file:=mid360.yaml
+ros2 launch fast_lio mapping.launch.py config_path:=... config_file:=mid360.yaml rviz:=false
 
-# 终端 2：hdl-localization + hdl_global_localization（合并在同一 launch）
-ros2 launch hdl_localization hdl_localization_go2.launch.py \
-    globalmap_pcd:=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd
-
-# 终端 3：odom_tf_bridge
+# 终端 2：odom_tf_bridge
 ros2 launch odom_tf_bridge odom_bridge.launch.py
+
+# 终端 3：fast_lio_localization（含 pcd_publisher、global_localization、transform_fusion）
+ros2 launch fast_lio_localization_ros2 localize_go2.launch.py \
+    map:=~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd rviz:=false
 ```
 
 ### 5. 验证
 
 ```bash
-# 检查 TF 树是否完整
+# TF 树完整性
 ros2 run tf2_ros tf2_echo map base_link
 
-# 检查定位输出
-ros2 topic hz /hdl_pose
+# 重定位输出（应约 0.5 Hz）
+ros2 topic hz /map_to_odom
 
-# 检查 NDT 匹配质量（fitness_score 应 < 1.0）
-ros2 topic echo /status
+# 融合后完整定位
+ros2 topic hz /localization
+ros2 topic echo /localization --once
 ```
 
 ---
 
-## 参数说明
+## Nav2 接口
 
-主要参数在 `hdl-localization/hdl_localization/config/hdl_go2_params.yaml`：
+| 话题 / TF | 消息类型 | 频率 | QoS | 来源 |
+|---|---|---|---|---|
+| `/odom` | `nav_msgs/Odometry` | 10 Hz | RELIABLE | odom_tf_bridge |
+| `odom → base_link` | TF | 10 Hz | — | odom_tf_bridge |
+| `map → odom` | TF | 100 Hz | — | transform_fusion |
+| `/localization` | `nav_msgs/Odometry` | 100 Hz | RELIABLE | transform_fusion |
 
-| 参数 | 值 | 说明 |
-|---|---|---|
-| `reg_method` | `NDT_OMP` | 匹配算法 |
-| `ndt_resolution` | `0.5` | NDT 体素大小（m） |
-| `downsample_resolution` | `0.2` | 输入点云降采样（m） |
-| `enable_robot_odometry_prediction` | `true` | 利用 odom TF 做帧间预测 |
-| `use_imu` | `false` | 关闭 IMU（FAST-LIO2 已融合） |
-| `use_global_localization` | `true` | 启用全局重定位服务 |
-| `cool_time_duration` | `2.0` | 冷启动等待时间（s） |
+---
 
-全局地图降采样分辨率（`GlobalmapServerNodelet`）在 launch 文件中内联设置为 `0.1`。
+## 重定位
 
-### 运行中手动重定位
-
-触发全局重定位服务：
+向 `/initialpose` 发布初始位姿触发全局重定位（与 RViz2 的 "2D Pose Estimate" 按钮兼容）：
 
 ```bash
-ros2 service call /relocalize std_srvs/srv/Empty
+ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0}, orientation: {w: 1.0}}}}" --once
 ```
-
-或通过 RViz 的 "2D Pose Estimate" 工具直接给定初始位姿。
-
----
-
-## 关键设计说明
-
-### 为什么用 /cloud_registered_body
-
-FAST-LIO2 的 `/cloud_registered_body` 经过 IMU 去畸变，补偿了扫描过程中的运动，比原始点云更适合地图匹配。
-
-### hdl_global_localization 集成
-
-`use_global_localization: true` 时，`HdlLocalizationNodelet` 启动会等待全局定位服务就绪。`hdl_localization_go2.launch.py` 已将 `hdl_global_localization` 容器集成在内，两者同步启动，无需手动管理依赖顺序。
-
-### 里程计预测
-
-hdl-localization 利用 `odom -> base_link` TF 做帧间运动预测，作为 NDT 匹配的初始猜测，减少迭代次数，提升实时性。
-
-### TF 广播来源
-
-| TF | 广播者 |
-|---|---|
-| `camera_init -> body` | FAST-LIO2 |
-| `odom -> base_link` | odom_tf_bridge |
-| `map -> odom` | hdl-localization |
 
 ---
 
 ## 常见问题
 
-**Q：`point cloud cannot be transformed into target frame`**
-- 确认 `odom -> base_link` TF 已发布：`ros2 run tf2_ros tf2_echo odom base_link`
-- 确认 FAST-LIO2 正在发布 `/cloud_registered_body`：`ros2 topic hz /cloud_registered_body`
+**Q：`odom → base_link` TF 不存在**
+- 确认 odom_tf_bridge 已启动：`ros2 node list | grep odom_tf_bridge`
+- 确认 FAST-LIO2 正在发布：`ros2 topic hz /Odometry`
 
-**Q：`map -> odom` TF 不更新 / 节点卡在等待服务**
-- 确认 `hdl_global_localization` 节点已启动（使用新版 launch 文件会自动启动）
-- 确认地图文件路径正确，节点启动时会打印加载路径
+**Q：`map → odom` TF 不更新**
+- 确认 `/map_to_odom` 有数据：`ros2 topic hz /map_to_odom`（应 ~0.5 Hz）
+- 确认地图文件路径正确，pcd_publisher 启动时会打印加载路径
+- 检查 ICP 拟合度：若环境变化大，可适当降低 `localization_th`（如 0.98）
 
-**Q：定位漂移或跳变**
-- 增大 `cool_time_duration` 让初始匹配更稳定
-- 调小 `ndt_resolution`（如 `0.3`）提升精度，但会增加计算量
-- 调用 `/relocalize` 服务触发全局重定位重置位姿
+**Q：open3d 导入报 numpy 版本错误**
+- 执行 `pip3 install "numpy<2"` 降级 numpy
+
+**Q：ICP 长时间无法收敛**
+- 确认初始位姿大致正确（偏差 < 5 m）
+- 降低 `localization_th` 阈值
+- 确认地图 PCD 与当前环境一致（未发生大规模变化）

@@ -1,6 +1,22 @@
 # Go2_time_sync
 
-基于 PTP (IEEE 1588) 的硬件时间戳同步包，用于 Go2 机器人主机（Master）与 MID360 激光雷达（Slave）之间的精确时间同步。
+基于 PTP (IEEE 1588) 的硬件时间戳同步包，设计用于 Go2 机器人主机（Master）与 MID360 激光雷达（Slave）之间的精确时间同步。
+
+> **当前状态（2026-04）**：MID360 PTP 硬件时间同步暂时无法正常工作，该模块**当前未启用**。系统统一使用主机系统时钟，MID360 Livox 驱动直接以系统时间为点云打时间戳。
+>
+> **当前时间链路**：
+> ```
+> 主机系统时钟（建议 NTP 同步）
+>         │
+>   Livox 驱动使用系统时间 → /livox/lidar.header.stamp
+>         │
+>   FAST-LIO2 透传 → /Odometry.stamp
+> ```
+>
+> 使用建议：运行前通过 NTP 同步主机时钟，避免时间戳漂移导致 TF 查询失败：
+> ```bash
+> sudo ntpdate ntp.aliyun.com
+> ```
 
 ---
 

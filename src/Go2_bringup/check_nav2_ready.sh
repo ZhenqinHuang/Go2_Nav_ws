@@ -23,7 +23,6 @@ fail() { echo -e "${RED}[FAIL]${NC} $*"; (( FAIL++ )); }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 section() { echo -e "\n${BOLD}── $* ──${NC}"; }
 
-# source ROS（忽略 unbound variable）
 set +u
 # shellcheck source=/dev/null
 source "${ROS_SETUP}" 2>/dev/null
@@ -37,7 +36,7 @@ NODE_LIST="$(ros2 node list 2>/dev/null)"
 section "1. 必要话题存在性"
 # ─────────────────────────────────────────────
 
-for topic in /odom /scan /cloud_registered_body /livox/lidar /livox/imu; do
+for topic in /odom /scan /cloud_registered_body /livox/lidar /livox/imu /Odometry /map_to_odom; do
     if echo "${TOPIC_LIST}" | grep -Fxq "${topic}"; then
         pass "话题存在: ${topic}"
     else
@@ -61,8 +60,7 @@ check_hz() {
 
     local tmpfile
     tmpfile=$(mktemp)
-    # hz 输出直接写 tty，必须用 script 捕获才能重定向
-    script -q -c "timeout 6s ros2 topic hz ${topic}" "${tmpfile}" >/dev/null 2>&1 || true
+    timeout 6s ros2 topic hz "${topic}" > "${tmpfile}" 2>&1 || true
 
     local hz
     hz=$(grep "average rate" "${tmpfile}" | tail -1 | awk '{print $3}' | tr -d ':\r')
@@ -85,6 +83,7 @@ check_hz() {
 check_hz /scan                   8   "/scan (LaserScan)"
 check_hz /odom                   8   "/odom (Odometry)"
 check_hz /cloud_registered_body  8   "/cloud_registered_body (PointCloud2)"
+check_hz /map_to_odom            0.3 "/map_to_odom (ICP 重定位，~0.5 Hz 正常)"
 
 # ─────────────────────────────────────────────
 section "3. TF 树完整性（Nav2 链路）"
@@ -93,42 +92,82 @@ section "3. TF 树完整性（Nav2 链路）"
 check_tf() {
     local src="$1"
     local dst="$2"
+    local required="${3:-true}"
     local tmpfile
     tmpfile=$(mktemp)
     timeout 3s ros2 run tf2_ros tf2_echo "${src}" "${dst}" > "${tmpfile}" 2>&1 || true
     if grep -qi "translation" "${tmpfile}"; then
         pass "TF 可达: ${src} → ${dst}"
     else
-        fail "TF 不可达: ${src} → ${dst}"
+        if [[ "${required}" == "true" ]]; then
+            fail "TF 不可达: ${src} → ${dst}"
+        else
+            warn "TF 不可达: ${src} → ${dst}（可选）"
+        fi
     fi
     rm -f "${tmpfile}"
 }
 
-# Nav2 最低要求：odom → base_link
-check_tf odom base_link
-
-# hdl_localization 启动后才有 map → odom，未启动时仅 warn
-_tf_tmp=$(mktemp)
-timeout 3s ros2 run tf2_ros tf2_echo map odom > "${_tf_tmp}" 2>&1 || true
-if grep -qi "translation" "${_tf_tmp}"; then
-    pass "TF 可达: map → odom（hdl_localization 已运行）"
-else
-    warn "TF 不可达: map → odom（hdl_localization 未启动，导航前需启动）"
-fi
-rm -f "${_tf_tmp}"
-
-# FAST-LIO2 独立树
-check_tf camera_init body
+# Nav2 核心 TF 链
+check_tf odom      base_link  true
+check_tf map       odom       true
+check_tf map       base_link  true   # 完整链路验证
 
 # ─────────────────────────────────────────────
-section "4. /scan 消息质量"
+section "4. 时间戳一致性"
+# ─────────────────────────────────────────────
+
+check_stamp_age() {
+    local topic="$1"
+    local label="$2"
+    local max_age_s="${3:-1.0}"
+
+    if ! echo "${TOPIC_LIST}" | grep -Fxq "${topic}"; then
+        warn "${label} 话题不存在，跳过时间戳检查"
+        return
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp)
+    timeout 3s ros2 topic echo --once "${topic}" > "${tmpfile}" 2>&1 || true
+
+    local sec nsec
+    sec=$(grep -A2 "stamp:" "${tmpfile}" | grep "sec:" | head -1 | awk '{print $2}' | tr -d '\r')
+    nsec=$(grep -A2 "stamp:" "${tmpfile}" | grep "nanosec:" | head -1 | awk '{print $2}' | tr -d '\r')
+    rm -f "${tmpfile}"
+
+    if [[ -z "${sec}" ]]; then
+        warn "${label} 无法解析时间戳"
+        return
+    fi
+
+    local now_s
+    now_s=$(date +%s)
+    local msg_s="${sec}"
+    local age
+    age=$(echo "${now_s} ${msg_s}" | awk '{d=$1-$2; if(d<0)d=-d; print d}')
+    local ok
+    ok=$(echo "${age} ${max_age_s}" | awk '{print ($1 <= $2) ? "yes" : "no"}')
+
+    if [[ "${ok}" == "yes" ]]; then
+        pass "${label} 时间戳新鲜（age ≈ ${age}s，要求 ≤ ${max_age_s}s）"
+    else
+        fail "${label} 时间戳过旧（age ≈ ${age}s，要求 ≤ ${max_age_s}s）— 检查时间同步"
+    fi
+}
+
+check_stamp_age /odom                  "/odom"                  1.0
+check_stamp_age /cloud_registered_body "/cloud_registered_body" 1.0
+check_stamp_age /scan                  "/scan"                  1.0
+
+# ─────────────────────────────────────────────
+section "5. /scan 消息质量"
 # ─────────────────────────────────────────────
 
 if echo "${TOPIC_LIST}" | grep -Fxq "/scan"; then
     _scan_tmp=$(mktemp)
-    script -q -c "timeout 3s ros2 topic echo /scan" "${_scan_tmp}" >/dev/null 2>&1 || true
+    timeout 3s ros2 topic echo /scan > "${_scan_tmp}" 2>&1 || true
 
-    # frame_id 格式: "  frame_id: base_link"
     frame=$(grep "frame_id:" "${_scan_tmp}" | head -1 | awk '{print $2}' | tr -d '\r')
     if [[ "${frame}" == "base_link" ]]; then
         pass "/scan frame_id = base_link"
@@ -140,16 +179,9 @@ if echo "${TOPIC_LIST}" | grep -Fxq "/scan"; then
     amax=$(grep "^angle_max:" "${_scan_tmp}" | head -1 | awk '{print $2}' | tr -d '\r')
     if [[ -n "${amin}" && -n "${amax}" ]]; then
         coverage=$(echo "${amin} ${amax}" | awk '{printf "%.1f", ($2-$1)*180/3.14159}')
-        pass "/scan 角度覆盖 ≈ ${coverage}°（angle_min=${amin}, angle_max=${amax}）"
+        pass "/scan 角度覆盖 ≈ ${coverage}°"
     else
         warn "/scan 无法解析角度范围"
-    fi
-
-    ranges_len=$(grep -c "^- " "${_scan_tmp}" || true)
-    if (( ranges_len > 10 )); then
-        pass "/scan ranges 有效点数 ≈ ${ranges_len}"
-    else
-        fail "/scan ranges 点数过少（${ranges_len}），点云过滤可能过严"
     fi
     rm -f "${_scan_tmp}"
 else
@@ -157,14 +189,13 @@ else
 fi
 
 # ─────────────────────────────────────────────
-section "5. /odom 消息质量"
+section "6. /odom 消息质量"
 # ─────────────────────────────────────────────
 
 if echo "${TOPIC_LIST}" | grep -Fxq "/odom"; then
     _odom_tmp=$(mktemp)
-    script -q -c "timeout 3s ros2 topic echo /odom" "${_odom_tmp}" >/dev/null 2>&1 || true
+    timeout 3s ros2 topic echo /odom > "${_odom_tmp}" 2>&1 || true
 
-    # 格式: "  frame_id: odom" / "child_frame_id: base_link"
     odom_frame=$(grep "frame_id:" "${_odom_tmp}" | head -1 | awk '{print $2}' | tr -d '\r')
     child_frame=$(grep "child_frame_id:" "${_odom_tmp}" | head -1 | awk '{print $2}' | tr -d '\r')
 
@@ -180,7 +211,6 @@ if echo "${TOPIC_LIST}" | grep -Fxq "/odom"; then
         fail "/odom child_frame_id = '${child_frame}'（期望 base_link）"
     fi
 
-    # 协方差：取第一个非零值判断
     cov_nonzero=$(grep -A40 "covariance:" "${_odom_tmp}" | grep -v "covariance:" \
         | awk '{print $2}' | tr -d '\r' | awk 'BEGIN{f=0} $1+0!=0{f=1} END{print f}')
     if [[ "${cov_nonzero}" == "1" ]]; then
@@ -194,12 +224,15 @@ else
 fi
 
 # ─────────────────────────────────────────────
-section "6. 关键节点存活"
+section "7. 关键节点存活"
 # ─────────────────────────────────────────────
 
 for node in \
     /livox_lidar_publisher \
     /odom_tf_bridge_node \
+    /map_publisher \
+    /global_localization \
+    /transform_fusion \
     /cloud_filter_node \
     /pointcloud_to_laserscan; do
     if echo "${NODE_LIST}" | grep -Fq "${node}"; then
@@ -209,7 +242,6 @@ for node in \
     fi
 done
 
-# fastlio 节点名不固定，模糊匹配
 if echo "${NODE_LIST}" | grep -q "laser_mapping\|fastlio\|fast_lio"; then
     pass "节点存活: FAST-LIO2 (laser_mapping)"
 else

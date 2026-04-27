@@ -228,11 +228,14 @@ private:
 
     // transform pointcloud into odom_child_frame_id
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>());
-    if (!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, *tf_buffer)) {
+    if (pcl_cloud->header.frame_id == odom_child_frame_id) {
+      // 点云已在 odom_child_frame_id 坐标系下，直接使用，避免走 TF 查询
+      *cloud = *pcl_cloud;
+    } else if (!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, *tf_buffer)) {
         RCLCPP_ERROR(get_logger(), "point cloud cannot be transformed into target frame!!");
         return;
     }
-
+/*  */
     auto filtered = downsample(cloud);
     last_scan = filtered;
 

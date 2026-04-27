@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# Start Go2 MID360 + FAST-LIO2 + Nav2 input conversion chain.
-#
-# Default target:
-#   Ubuntu 20.04 + ROS 2 Foxy
+# Start Go2 MID360 + FAST-LIO2 + FAST-LIO-Localization + Nav2 input conversion chain.
 #
 # Startup order:
 #   1. livox_ros_driver2 msg_MID360_launch.py
-#   2. fast_lio mapping.launch.py
-#   3. odom_tf_bridge odom_bridge.launch.py
-#   4. go2_pc2scan pc2scan.launch.py
+#   2. fast_lio mapping.launch.py  (提供 /Odometry + /cloud_registered_body)
+#   3. odom_tf_bridge odom_bridge.launch.py  (odom->base_link TF + /odom)
+#   4. fast_lio_localization_ros2 localize_go2.launch.py  (map->odom TF，替代 HDL)
+#   5. go2_pc2scan pc2scan.launch.py
 #
 # Common overrides:
 #   LIVOX_WS=/home/unitree/ws_Livox \
 #   FASTLIO_WS=/home/unitree/ws_fastlio2 \
 #   GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
 #   FASTLIO_CONFIG=/home/unitree/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml \
+#   FASTLIO_LOC_PCD=/path/to/map.pcd \
 #   bash go2_nav_start.sh
 
 set -Eeuo pipefail
@@ -29,10 +28,9 @@ GO2_NAV_WS="${GO2_NAV_WS:-${DEFAULT_GO2_WS}}"
 LIVOX_WS="${LIVOX_WS:-${HOME}/ws_Livox}"
 FASTLIO_WS="${FASTLIO_WS:-${HOME}/ws_fastlio2}"
 FASTLIO_CONFIG="${FASTLIO_CONFIG:-${FASTLIO_WS}/src/FAST_LIO_ROS2/config/mid360.yaml}"
+FASTLIO_LOC_PCD="${FASTLIO_LOC_PCD:-${GO2_NAV_WS}/src/Go2_localization/PCD/MID360.pcd}"
 
 RVIZ="${RVIZ:-false}"
-PUBLISH_TF="${PUBLISH_TF:-true}"
-HDL_GLOBALMAP_PCD="${HDL_GLOBALMAP_PCD:-${GO2_NAV_WS}/src/Go2_localization/PCD/MID360.pcd}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-30}"
 STATUS_INTERVAL="${STATUS_INTERVAL:-2}"
 
@@ -92,9 +90,10 @@ cleanup() {
     # 兜底：按进程名强制清理 ros2 launch fork 出的子进程
     pkill -9 -f "livox_ros_driver2_node"  2>/dev/null || true
     pkill -9 -f "laser_mapping"           2>/dev/null || true
-    pkill -9 -f "hdl_global_localization_container" 2>/dev/null || true
-    pkill -9 -f "hdl_localization_nodelet_manager" 2>/dev/null || true
     pkill -9 -f "odom_tf_bridge_node"     2>/dev/null || true
+    pkill -9 -f "pcd_publisher"           2>/dev/null || true
+    pkill -9 -f "global_localization_ros2" 2>/dev/null || true
+    pkill -9 -f "transform_fusion_ros2"   2>/dev/null || true
     pkill -9 -f "cloud_filter_node"       2>/dev/null || true
     pkill -9 -f "pointcloud_to_laserscan_node" 2>/dev/null || true
     pkill -9 -f "static_transform_publisher"   2>/dev/null || true
@@ -207,16 +206,16 @@ print_status() {
 
     echo -e "\n${BOLD}节点:${NC}"
     ros2 node list 2>/dev/null | grep -E \
-        'livox_lidar_publisher|fastlio|HdlLocalizationNodelet|GlobalmapServerNodelet|hdl_global_localization|odom_tf_bridge|cloud_filter|pointcloud_to_laserscan' \
+        'livox_lidar_publisher|laser_mapping|fastlio|odom_tf_bridge|map_publisher|global_localization|transform_fusion|cloud_filter|pointcloud_to_laserscan' \
         || warn "未匹配到预期节点"
 
     echo -e "\n${BOLD}话题:${NC}"
     ros2 topic list 2>/dev/null | grep -E \
-        '^/livox/lidar$|^/livox/imu$|^/Odometry$|^/cloud_registered_body$|^/hdl_pose$|^/odom$|^/cloud_filtered$|^/scan$' \
+        '^/livox/lidar$|^/livox/imu$|^/Odometry$|^/cloud_registered_body$|^/odom$|^/map_to_odom$|^/localization$|^/cloud_filtered$|^/scan$' \
         || warn "未匹配到预期话题"
 
     echo -e "\n${BOLD}话题频率抽检，Ctrl+C 可中断:${NC}"
-    for topic in /livox/lidar /livox/imu /Odometry /cloud_registered_body /hdl_pose /odom /scan; do
+    for topic in /livox/lidar /Odometry /odom /map_to_odom /scan; do
         if ros2 topic list 2>/dev/null | grep -Fxq "${topic}"; then
             timeout 4s ros2 topic hz "${topic}" 2>/dev/null | sed "s/^/[${topic}] /" || true
         else
@@ -229,7 +228,7 @@ main() {
     log "Go2 导航链路启动"
     log "ROS=${ROS_DISTRO_NAME}, LIVOX_WS=${LIVOX_WS}, FASTLIO_WS=${FASTLIO_WS}, GO2_NAV_WS=${GO2_NAV_WS}"
     log "FASTLIO_CONFIG=${FASTLIO_CONFIG}"
-    log "HDL_GLOBALMAP_PCD=${HDL_GLOBALMAP_PCD}"
+    log "FASTLIO_LOC_PCD=${FASTLIO_LOC_PCD}"
 
     source_if_exists "${ROS_SETUP}" "ROS 2"
     source_if_exists "${LIVOX_WS}/install/setup.bash" "Livox 工作空间"
@@ -239,7 +238,7 @@ main() {
     require_command ros2
     require_command timeout
     require_file "${FASTLIO_CONFIG}" "FAST-LIO2 配置文件"
-    require_file "${HDL_GLOBALMAP_PCD}" "HDL 全局地图 PCD 文件"
+    require_file "${FASTLIO_LOC_PCD}" "定位地图 PCD 文件"
 
     local fastlio_config_path
     local fastlio_config_file
@@ -267,20 +266,20 @@ main() {
     wait_for_topic "/cloud_registered_body"
 
     start_background \
-        "hdl_localization" \
-        "${LOG_DIR}/hdl_localization.log" \
-        ros2 launch hdl_localization hdl_localization_go2.launch.py \
-            "globalmap_pcd:=${HDL_GLOBALMAP_PCD}"
-
-    wait_for_topic "/hdl_pose"
-
-    start_background \
         "odom_tf_bridge" \
         "${LOG_DIR}/odom_tf_bridge.log" \
-        ros2 launch odom_tf_bridge odom_bridge.launch.py \
-            "publish_tf:=${PUBLISH_TF}"
+        ros2 launch odom_tf_bridge odom_bridge.launch.py
 
     wait_for_topic "/odom"
+
+    start_background \
+        "fast_lio_localization" \
+        "${LOG_DIR}/fast_lio_localization.log" \
+        ros2 launch fast_lio_localization_ros2 localize_go2.launch.py \
+            "map:=${FASTLIO_LOC_PCD}" \
+            "rviz:=${RVIZ}"
+
+    wait_for_topic "/map_to_odom"
 
     start_background \
         "go2_pc2scan" \

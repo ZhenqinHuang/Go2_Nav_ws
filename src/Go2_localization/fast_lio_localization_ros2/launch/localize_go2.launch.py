@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
     rviz_arg = DeclareLaunchArgument('rviz', default_value='false')
     use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
 
-    default_pcd = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'PCD', 'MID360.pcd'
+    # 使用 FindPackageShare 解析安装后的路径，colcon build（有无 --symlink-install）均正确
+    default_pcd = PathJoinSubstitution(
+        [FindPackageShare('fast_lio_localization_ros2'), 'PCD', 'MID360.pcd']
     )
     map_arg = DeclareLaunchArgument('map', default_value=default_pcd)
 

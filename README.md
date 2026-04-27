@@ -188,3 +188,4 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 - Nav2 完整配置（costmap、行为树、路径规划参数文件）
 - Nav2 启动脚本 `nav2_start.sh`
+正在完善 Go2 机器狗自主导航项目的重定位模块。所有代码和文档问题已修复并推送到 GitHub，等待明天实机测试验证。 

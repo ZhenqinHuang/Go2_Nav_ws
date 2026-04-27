@@ -1,0 +1,39 @@
+/**:
+  ros__parameters:
+    # ── HDL-Localization 参数配置 (针对 Go2) ────────
+    # ========================================================
+    cool_time_duration: 2.0
+    
+    # 使用里程计预测 (FAST-LIO2 的 odom -> base_link 已存在)
+    enable_robot_odometry_prediction: true
+    robot_odom_frame_id: "odom"
+    odom_child_frame_id: "base_link"
+    send_tf_transforms: true # 广播 map->odom TF
+
+    # IMU 设置 (FAST-LIO2 的 cloud 已经校正，直接从 odom 预测即可，可关 IMU)
+    use_imu: false
+    invert_acc: false
+    invert_gyro: false
+
+    # ==========================
+    # 匹配算法参数
+    # ==========================
+    # 可选: NDT_OMP, NDT_CUDA_P2D, NDT_CUDA_D2D
+    reg_method: "NDT_OMP"
+    ndt_neighbor_search_method: "DIRECT7"
+    ndt_neighbor_search_radius: 1.0 # 如果用 DIRECT_RADIUS
+    ndt_resolution: 0.5
+    downsample_resolution: 0.2
+
+    # 初始化选项
+    specify_init_pose: true
+    init_pos_x: 0.0
+    init_pos_y: 0.0
+    init_pos_z: 0.0
+    init_ori_w: 1.0
+    init_ori_x: 0.0
+    init_ori_y: 0.0
+    init_ori_z: 0.0
+
+    # 重定位
+    use_global_localization: true

@@ -58,7 +58,7 @@ class GlobalLocalizationNode(Node):
 		reliable_qos = QoSProfile(depth=10)
 		reliable_qos.reliability = ReliabilityPolicy.RELIABLE
 
-		# FAST-LIO2 publishes /Odometry and /cloud_registered_body with BEST_EFFORT
+		# FAST-LIO2 publishes /Odometry and /cloud_registered with BEST_EFFORT
 		best_effort_qos = QoSProfile(depth=10)
 		best_effort_qos.reliability = ReliabilityPolicy.BEST_EFFORT
 

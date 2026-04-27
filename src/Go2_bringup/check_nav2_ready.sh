@@ -36,7 +36,7 @@ NODE_LIST="$(ros2 node list 2>/dev/null)"
 section "1. 必要话题存在性"
 # ─────────────────────────────────────────────
 
-for topic in /odom /scan /cloud_registered_body /livox/lidar /livox/imu /Odometry /map_to_odom; do
+for topic in /odom /scan /cloud_registered /cloud_registered_body /livox/lidar /livox/imu /Odometry /map_to_odom; do
     if echo "${TOPIC_LIST}" | grep -Fxq "${topic}"; then
         pass "话题存在: ${topic}"
     else
@@ -82,7 +82,8 @@ check_hz() {
 
 check_hz /scan                   8   "/scan (LaserScan)"
 check_hz /odom                   8   "/odom (Odometry)"
-check_hz /cloud_registered_body  8   "/cloud_registered_body (PointCloud2)"
+check_hz /cloud_registered       8   "/cloud_registered (world 帧，ICP 定位输入)"
+check_hz /cloud_registered_body  8   "/cloud_registered_body (body 帧，点云滤波输入)"
 check_hz /map_to_odom            0.3 "/map_to_odom (ICP 重定位，~0.5 Hz 正常)"
 
 # ─────────────────────────────────────────────
@@ -157,6 +158,7 @@ check_stamp_age() {
 }
 
 check_stamp_age /odom                  "/odom"                  1.0
+check_stamp_age /cloud_registered      "/cloud_registered"      1.0
 check_stamp_age /cloud_registered_body "/cloud_registered_body" 1.0
 check_stamp_age /scan                  "/scan"                  1.0
 

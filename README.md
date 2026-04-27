@@ -26,8 +26,8 @@ MID360 LiDAR + IMU
         │   (camera_init → body, BEST_EFFORT)         │
         │                               /odom + odom→base_link TF (RELIABLE)
         │
-        ├─ /cloud_registered_body ─────> fast_lio_localization_ros2
-        │                               ├─ pcd_publisher  → /map3d
+        ├─ /cloud_registered ──────────> fast_lio_localization_ros2
+        │   (world 帧，camera_init)     ├─ pcd_publisher  → /map3d
         │                               ├─ global_localization (ICP) → /map_to_odom
         │                               └─ transform_fusion → map→odom TF + /localization
         │
@@ -53,7 +53,7 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
   Livox 驱动使用系统时间为点云打时间戳
   /livox/lidar.header.stamp
         │
-  FAST-LIO2 透传 → /Odometry.stamp, /cloud_registered_body.stamp
+  FAST-LIO2 透传 → /Odometry.stamp, /cloud_registered.stamp, /cloud_registered_body.stamp
         │
   各节点透传 → /odom.stamp, /cloud_filtered.stamp, /scan.stamp
 ```

@@ -11,7 +11,8 @@ MID360 LiDAR + IMU
         │
    FAST-LIO2 (LiDAR-IMU 紧耦合里程计)
         │  /Odometry (camera_init→body, BEST_EFFORT, 10 Hz)
-        │  /cloud_registered_body (body 坐标系点云, BEST_EFFORT, 10 Hz)
+        │  /cloud_registered (world 帧 camera_init, BEST_EFFORT, 10 Hz)
+        │  /cloud_registered_body (body 帧, BEST_EFFORT, 10 Hz)
         │
         ├─ /Odometry ──────────────> odom_tf_bridge
         │                            ├─ 重命名: camera_init→odom, body→base_link
@@ -19,11 +20,10 @@ MID360 LiDAR + IMU
         │                            ├─ 发布 /odom (RELIABLE, 10 Hz)
         │                            └─ 广播 TF: odom→base_link (10 Hz)
         │
-        └─ /cloud_registered_body ─> fast_lio_localization_ros2
-                                     ├─ pcd_publisher: 发布 /map3d (1 Hz, TRANSIENT_LOCAL)
-                                     ├─ global_localization: ICP
-                                      地图匹配 → /map_to_odom (0.5 Hz)
-                                     └─ transform_fusion: map→odom TF (100 Hz) + /localization
+        ├─ /cloud_registered ──────> fast_lio_localization_ros2
+        │   (world 帧，ICP 输入)     ├─ pcd_publisher: 发布 /map3d (1 Hz, TRANSIENT_LOCAL)
+        │                            ├─ global_localization: ICP 匹配 → /map_to_odom (0.5 Hz)
+        │                            └─ transform_fusion: map→odom TF (100 Hz) + /localization
 ```
 
 **完整 TF 树：**

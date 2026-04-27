@@ -3,7 +3,7 @@
 #
 # Startup order:
 #   1. livox_ros_driver2 msg_MID360_launch.py
-#   2. fast_lio mapping.launch.py  (提供 /Odometry + /cloud_registered_body)
+#   2. fast_lio mapping.launch.py  (提供 /Odometry + /cloud_registered (world帧) + /cloud_registered_body (body帧))
 #   3. odom_tf_bridge odom_bridge.launch.py  (odom->base_link TF + /odom)
 #   4. fast_lio_localization_ros2 localize_go2.launch.py  (map->odom TF，替代 HDL)
 #   5. go2_pc2scan pc2scan.launch.py
@@ -211,7 +211,7 @@ print_status() {
 
     echo -e "\n${BOLD}话题:${NC}"
     ros2 topic list 2>/dev/null | grep -E \
-        '^/livox/lidar$|^/livox/imu$|^/Odometry$|^/cloud_registered_body$|^/odom$|^/map_to_odom$|^/localization$|^/cloud_filtered$|^/scan$' \
+        '^/livox/lidar$|^/livox/imu$|^/Odometry$|^/cloud_registered$|^/cloud_registered_body$|^/odom$|^/map_to_odom$|^/localization$|^/cloud_filtered$|^/scan$' \
         || warn "未匹配到预期话题"
 
     echo -e "\n${BOLD}话题频率抽检，Ctrl+C 可中断:${NC}"
@@ -263,6 +263,7 @@ main() {
             "rviz:=${RVIZ}"
 
     wait_for_topic "/Odometry"
+    wait_for_topic "/cloud_registered"
     wait_for_topic "/cloud_registered_body"
 
     start_background \

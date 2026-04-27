@@ -21,7 +21,7 @@ Go2 导航链路的一键启动脚本目录。
 | 步骤 | 模块 | 等待条件 |
 |---|---|---|
 | 1 | Livox MID360 驱动 | `/livox/lidar`、`/livox/imu` 出现 |
-| 2 | FAST-LIO2 | `/Odometry`、`/cloud_registered_body` 出现 |
+| 2 | FAST-LIO2 | `/Odometry`、`/cloud_registered`、`/cloud_registered_body` 出现 |
 | 3 | odom_tf_bridge | `/odom` 出现 |
 | 4 | fast_lio_localization_ros2 | `/map_to_odom` 出现（ICP 初次匹配完成） |
 | 5 | go2_pc2scan | `/cloud_filtered`、`/scan` 出现 |
@@ -75,10 +75,10 @@ bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 
 | 检查项 | 内容 |
 |---|---|
-| 1. 必要话题 | `/odom`、`/scan`、`/cloud_registered_body`、`/livox/lidar`、`/livox/imu`、`/Odometry`、`/map_to_odom` |
-| 2. 话题频率 | `/scan` ≥ 8 Hz，`/odom` ≥ 8 Hz，`/cloud_registered_body` ≥ 8 Hz，`/map_to_odom` ≥ 0.3 Hz |
+| 1. 必要话题 | `/odom`、`/scan`、`/cloud_registered`、`/cloud_registered_body`、`/livox/lidar`、`/livox/imu`、`/Odometry`、`/map_to_odom` |
+| 2. 话题频率 | `/scan` ≥ 8 Hz，`/odom` ≥ 8 Hz，`/cloud_registered` ≥ 8 Hz（ICP 输入），`/cloud_registered_body` ≥ 8 Hz（点云滤波输入），`/map_to_odom` ≥ 0.3 Hz |
 | 3. TF 完整性 | `odom→base_link`，`map→odom`，`map→base_link` |
-| 4. 时间戳新鲜度 | `/odom`、`/cloud_registered_body`、`/scan` 时间戳 age ≤ 1 s |
+| 4. 时间戳新鲜度 | `/odom`、`/cloud_registered`、`/cloud_registered_body`、`/scan` 时间戳 age ≤ 1 s |
 | 5. `/scan` 质量 | `frame_id = base_link`，角度覆盖正常 |
 | 6. `/odom` 质量 | `frame_id = odom`，`child_frame_id = base_link`，协方差非全零 |
 | 7. 关键节点 | 所有必要节点均存活 |

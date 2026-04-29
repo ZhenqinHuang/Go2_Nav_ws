@@ -39,7 +39,9 @@ def generate_launch_description():
     # /cloud_registered_body 是 body 坐标系，用于该目的会导致 T_map_to_odom 计算错误。
     global_loc = Node(
         package='fast_lio_localization_ros2',
-        executable='global_localization_ros2.py',
+        # Use the C++ node here. It uses MSE semantics for localization_th and
+        # enforces max_delta_xy/max_delta_yaw_rad after the initial alignment.
+        executable='global_localization',
         name='global_localization',
         output='screen',
         remappings=[
@@ -51,17 +53,22 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            'map_voxel_size': 0.25,    # 稍大体素，减少地图点数，ICP更快
-            'scan_voxel_size': 0.15,   # ICP扫描点降采样，减少法线估计计算量
+            # Orin NX 16GB：CPU 核心弱，ICP 耗时是瓶颈
+            # map_voxel_size 0.40：地图点数再减 ~30%，法线估计和 submap 裁剪都更快
+            # scan_voxel_size 0.25：扫描点降采样同步加大，保持 scan/map 点密度比例一致
+            # fov_far 10.0：从 12m 缩到 10m，submap 点数减少约 30%，是最直接的提速手段
+            # freq_localization 1.5：Orin NX 跑完一次两阶段 ICP 约需 400~600ms，
+            # 设 2.0 Hz 时 sleep 几乎为 0，实际频率反而不稳定；1.5 Hz 留出余量更可靠
+            'map_voxel_size': 0.40,
+            'scan_voxel_size': 0.25,
             'fov': 6.28,
-            # 每 1 秒矫正一次；实际周期 = ICP耗时 + sleep，真实频率约 0.8~1 Hz
-            'freq_localization': 1.0,
-            # 稍微缩小 FOV 半径减少 submap 点数，加快 ICP
-            'fov_far': 12.0,
+            'freq_localization': 1.5,
+            'fov_far': 10.0,
             # MSE 阈值：与原始默认值保持一致，过小会导致有效匹配被拒绝
             'localization_th': 0.10,
             # 单次最大矫正量：超出则拒绝，防止异常跳变（初始定位不受限）
-            'max_delta_xy': 1.5,
+            # 放宽 yaw 限制：0.52rad(30°) 太小，机器狗走歪后 ICP 结果会被持续拒绝导致无法收敛
+            'max_delta_xy': 0.8,
             'max_delta_yaw_rad': 1.05,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
@@ -72,7 +79,9 @@ def generate_launch_description():
     # 否则 QoS 不兼容导致消息接收失败。
     transform_fusion = Node(
         package='fast_lio_localization_ros2',
-        executable='transform_fusion_ros2.py',
+        # Use the C++ node here. The Python script publishes each /map_to_odom
+        # jump immediately and ignores correction_time_constant_* parameters.
+        executable='transform_fusion',
         name='transform_fusion',
         output='screen',
         remappings=[],
@@ -80,10 +89,11 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # 平移矫正快（0.3s），旋转矫正慢（3s）
-            # yaw 矫正慢可避免航向突变触发 DWB 摆头
+            # 平移矫正快（0.3s），旋转矫正适中（1.2s）
+            # yaw 时间常数从 3.0s 降到 1.2s：3.0s 时 ICP 纠正量要 3 秒才传给 Nav2，
+            # 期间 DWB 持续用错误航向规划，导致越走越歪
             'correction_time_constant_xy': 0.3,
-            'correction_time_constant_yaw': 3.0,
+            'correction_time_constant_yaw': 1.2,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

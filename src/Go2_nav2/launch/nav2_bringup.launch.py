@@ -86,6 +86,11 @@ def generate_launch_description():
             parameters=[
                 os.path.join(config_dir, "bt_navigator.yaml"),
                 sim_time_param,
+                {
+                    "default_bt_xml_filename": os.path.join(
+                        pkg_share, "behavior_trees", "navigate_slow_replan.xml"
+                    ),
+                },
             ],
         ),
 

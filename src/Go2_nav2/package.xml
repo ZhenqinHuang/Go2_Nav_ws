@@ -10,6 +10,7 @@
 
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>unitree_api</depend>
 
   <exec_depend>ament_index_python</exec_depend>

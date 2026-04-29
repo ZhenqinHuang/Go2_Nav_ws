@@ -4,6 +4,7 @@ project(go2_nav2)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(unitree_api REQUIRED)
 
 add_executable(go2_cmd_vel_bridge_node
@@ -18,6 +19,7 @@ target_include_directories(go2_cmd_vel_bridge_node PRIVATE
 ament_target_dependencies(go2_cmd_vel_bridge_node
   rclcpp
   geometry_msgs
+  nav_msgs
   unitree_api
 )
 

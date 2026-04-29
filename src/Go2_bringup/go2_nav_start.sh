@@ -94,6 +94,8 @@ cleanup() {
     pkill -9 -f "pcd_publisher"           2>/dev/null || true
     pkill -9 -f "global_localization_ros2" 2>/dev/null || true
     pkill -9 -f "transform_fusion_ros2"   2>/dev/null || true
+    pkill -9 -f "global_localization"     2>/dev/null || true
+    pkill -9 -f "transform_fusion"        2>/dev/null || true
     pkill -9 -f "cloud_filter_node"       2>/dev/null || true
     pkill -9 -f "pointcloud_to_laserscan_node" 2>/dev/null || true
     pkill -9 -f "static_transform_publisher"   2>/dev/null || true

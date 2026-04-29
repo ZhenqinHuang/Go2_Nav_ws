@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -51,6 +52,8 @@ public:
 		// QoS
 		rclcpp::QoS qos_reliable(10);
 		qos_reliable.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
+		rclcpp::QoS qos_sensor(10);
+		qos_sensor.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
 		rclcpp::QoS qos_transient(1);
 		qos_transient.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
 		qos_transient.transient_local();
@@ -62,8 +65,8 @@ public:
 		pub_initialpose_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", qos_transient);
 
 		// Subscriptions
-		sub_cloud_registered_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", 1, std::bind(&GlobalLocalizationNode::cbSaveCurScan, this, std::placeholders::_1));
-		sub_aft_mapped_ = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 1, std::bind(&GlobalLocalizationNode::cbSaveCurOdom, this, std::placeholders::_1));
+		sub_cloud_registered_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered", qos_sensor, std::bind(&GlobalLocalizationNode::cbSaveCurScan, this, std::placeholders::_1));
+		sub_aft_mapped_ = this->create_subscription<nav_msgs::msg::Odometry>("/odom", qos_sensor, std::bind(&GlobalLocalizationNode::cbSaveCurOdom, this, std::placeholders::_1));
 		sub_map3d_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/map3d", qos_reliable, std::bind(&GlobalLocalizationNode::cbInitGlobalMap, this, std::placeholders::_1));
 
 		// Thread
@@ -125,11 +128,12 @@ private:
 			double y = pb.y();
 			double z = pb.z();
 			double ang = std::atan2(y, x);
+			double range_xy = std::hypot(x, y);
 			bool in = false;
 			if (FOV > 3.14) {
-				in = (x < FOV_FAR) && (std::fabs(ang) < FOV / 2.0);
+				in = (range_xy < FOV_FAR) && (std::fabs(ang) < FOV / 2.0);
 			} else {
-				in = (x > 0.0) && (x < FOV_FAR) && (std::fabs(ang) < FOV / 2.0);
+				in = (x > 0.0) && (range_xy < FOV_FAR) && (std::fabs(ang) < FOV / 2.0);
 			}
 			if (in) {
 				pcl::PointNormal p;

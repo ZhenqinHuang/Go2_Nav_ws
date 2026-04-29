@@ -73,11 +73,14 @@ Go2_localization/
 └── fast_lio_localization_ros2/            # ICP 点云地图定位与全局重定位
     ├── launch/
     │   └── localize_go2.launch.py         # Go2 专用
-    ├── scripts/
-    │   ├── pcd_publisher.py              # 加载 PCD 文件并发布为 /map3d
-    │   ├── global_localization_ros2.py   # ICP 重定位，发布 /map_to_odom
-    │   └── transform_fusion_ros2.py      # 融合里程计与重定位，广播 map→odom TF
-    └── PCD/
+	    ├── scripts/
+	    │   ├── pcd_publisher.py              # 加载 PCD 文件并发布为 /map3d
+	    │   ├── global_localization_ros2.py   # Python 旧版（保留备用）
+	    │   └── transform_fusion_ros2.py      # Python 旧版（保留备用）
+	    ├── src/
+	    │   ├── global_localization.cpp       # C++ ICP 重定位，发布 /map_to_odom
+	    │   └── transform_fusion.cpp          # C++ TF 融合，平滑广播 map→odom
+	    └── PCD/
         └── MID360.pcd -> ../PCD/MID360.pcd  # 软链接
 ```
 
@@ -104,8 +107,8 @@ Go2_localization/
 - 订阅 `/cloud_registered`（**world 坐标系**点云，frame_id=`camera_init`，BEST_EFFORT）
 - 订阅 `/Odometry`（remapping 为 `/odom`，BEST_EFFORT）——直接使用 FAST-LIO2 原始里程计
 - 订阅 `/map3d`（全局地图，RELIABLE）
-- 用 open3d ICP 做多尺度点云匹配（5× 粗配 + 1× 精配）
-- 发布 `/map_to_odom`（`map` → `odom` 的 4×4 变换，约 0.5 Hz）
+- 用 PCL ICP 做多尺度点云匹配（5× 粗配 + 1× 精配）
+- 发布 `/map_to_odom`（`map` → `odom` 的 4×4 变换，目标 1.5 Hz，实际频率取决于 ICP 耗时）
 
 > **为何必须用 `/cloud_registered` 而非 `/cloud_registered_body`**：ICP 的 target 是 map 帧子图，initial 是 T_map_to_odom。若 source（scan）在 world/odom 帧，ICP 结果直接就是 T_map_to_odom；若 source 在 body 帧，ICP 结果是 T_map_to_body，被错误存入 T_map_to_odom，随机器人移动持续漂移。`/cloud_registered` 由 FAST-LIO2 经 `RGBpointBodyToWorld` 变换后以 `frame_id="camera_init"` 发布，是真正的 world 帧。
 
@@ -113,17 +116,17 @@ Go2_localization/
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| `map_voxel_size` | 0.2 m | 地图体素大小 |
-| `scan_voxel_size` | 0.1 m | 扫描体素大小 |
+| `map_voxel_size` | 0.40 m | 地图体素大小，适配 Orin NX 16GB 降低 ICP 压力 |
+| `scan_voxel_size` | 0.25 m | 扫描体素大小 |
 | `fov` | 6.28 (360°) | MID360 全视角 |
-| `fov_far` | 15.0 m | 地图裁剪距离（仅保留近处地图点用于 ICP） |
-| `freq_localization` | 0.5 Hz | 重定位频率 |
-| `localization_th` | 0.997 | ICP 拟合度阈值（99.7% 点对应） |
+| `fov_far` | 10.0 m | 地图裁剪距离（仅保留近处地图点用于 ICP） |
+| `freq_localization` | 1.5 Hz | 重定位目标频率 |
+| `localization_th` | 0.10 | ICP MSE 阈值（越小越严格） |
 
 #### transform_fusion
 - 订阅 `/odom`（来自 odom_tf_bridge，RELIABLE）——不 remap，QoS 必须匹配
 - 订阅 `/map_to_odom`（ICP 结果，RELIABLE）
-- 以 100 Hz 高频广播 `map→odom` TF（时间戳跟随 `/odom`）
+- 以 100 Hz 高频广播 `map→odom` TF，并对 ICP 修正量做平滑融合
 - 计算 `T_map→base_link = T_map→odom × T_odom→base_link` 并发布 `/localization`
 
 > **QoS 说明**：transform_fusion 用 RELIABLE QoS 订阅 `/odom`，若 remap 到 FAST-LIO2 的 `/Odometry`（BEST_EFFORT），ROS 2 QoS 不兼容，消息完全收不到。因此 transform_fusion 直接订阅 odom_tf_bridge 的 `/odom`（RELIABLE）。global_localization 则用 BEST_EFFORT 订阅 `/Odometry`，两者来源不同但数据等价（camera_init ≡ odom，body ≡ base_link）。

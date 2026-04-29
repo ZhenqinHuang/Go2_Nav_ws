@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -158,4 +160,4 @@ int main(int argc, char** argv) {
 	rclcpp::spin(node);
 	rclcpp::shutdown();
 	return 0;
-} 
+}

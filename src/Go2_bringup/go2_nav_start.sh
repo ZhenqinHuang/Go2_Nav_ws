@@ -269,7 +269,8 @@ main() {
     start_background \
         "odom_tf_bridge" \
         "${LOG_DIR}/odom_tf_bridge.log" \
-        ros2 launch odom_tf_bridge odom_bridge.launch.py
+        ros2 launch odom_tf_bridge odom_bridge.launch.py \
+            "base_frame:=base_link"
 
     wait_for_topic "/odom"
 

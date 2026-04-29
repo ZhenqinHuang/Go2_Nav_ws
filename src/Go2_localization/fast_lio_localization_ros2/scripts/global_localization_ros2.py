@@ -17,13 +17,84 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from geometry_msgs.msg import PoseWithCovarianceStamped, Pose, Point, Quaternion
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Header
 
-from sensor_msgs_py import point_cloud2 as pc2
 from tf_transformations import quaternion_matrix, quaternion_from_matrix, translation_from_matrix
+import struct as _struct
+from sensor_msgs.msg import PointField as _PointField
+
+class _PC2Compat:
+	PointField = _PointField
+
+	@staticmethod
+	def read_points(cloud_msg, field_names=None, skip_nans=False):
+		fmt_map = {1: 'b', 2: 'B', 3: 'h', 4: 'H', 5: 'i', 6: 'I', 7: 'f', 8: 'd'}
+		fields = {f.name: f for f in cloud_msg.fields}
+		if field_names is None:
+			field_names = list(fields.keys())
+		offsets = [fields[n].offset for n in field_names]
+		fmts    = [fmt_map[fields[n].datatype] for n in field_names]
+		step    = cloud_msg.point_step
+		data    = bytes(cloud_msg.data)
+		points  = []
+		for i in range(cloud_msg.width * cloud_msg.height):
+			base = i * step
+			vals = tuple(_struct.unpack_from(f, data, base + o)[0] for f, o in zip(fmts, offsets))
+			if skip_nans and any(v != v for v in vals):
+				continue
+			points.append(vals)
+		return points
+
+	@staticmethod
+	def create_cloud_xyz32(header, points):
+		import array as _array
+		fields = [
+			_PointField(name='x', offset=0,  datatype=_PointField.FLOAT32, count=1),
+			_PointField(name='y', offset=4,  datatype=_PointField.FLOAT32, count=1),
+			_PointField(name='z', offset=8,  datatype=_PointField.FLOAT32, count=1),
+		]
+		from sensor_msgs.msg import PointCloud2 as _PC2
+		msg = _PC2()
+		msg.header = header
+		msg.height = 1
+		msg.width  = len(points)
+		msg.fields = fields
+		msg.is_bigendian = False
+		msg.point_step   = 12
+		msg.row_step     = 12 * len(points)
+		msg.is_dense     = True
+		buf = _array.array('f')
+		for p in points:
+			buf.extend([float(p[0]), float(p[1]), float(p[2])])
+		msg.data = bytes(buf)
+		return msg
+
+	@staticmethod
+	def create_cloud(header, fields, points):
+		import array as _array
+		from sensor_msgs.msg import PointCloud2 as _PC2
+		point_step = max(f.offset + 4 for f in fields)
+		msg = _PC2()
+		msg.header = header
+		msg.height = 1
+		msg.width  = len(points)
+		msg.fields = fields
+		msg.is_bigendian = False
+		msg.point_step   = point_step
+		msg.row_step     = point_step * len(points)
+		msg.is_dense     = True
+		buf = bytearray(point_step * len(points))
+		for i, p in enumerate(points):
+			base = i * point_step
+			for j, f in enumerate(fields):
+				_struct.pack_into('f', buf, base + f.offset, float(p[j]))
+		msg.data = bytes(buf)
+		return msg
+
+pc2 = _PC2Compat()
 
 
 class GlobalLocalizationNode(Node):
@@ -253,7 +324,13 @@ class GlobalLocalizationNode(Node):
 			map_to_odom = Odometry()
 			xyz = translation_from_matrix(self.T_map_to_odom)
 			quat = quaternion_from_matrix(self.T_map_to_odom)
-			map_to_odom.pose.pose = Pose(Point(*xyz), Quaternion(*quat))
+			map_to_odom.pose.pose.position.x = float(xyz[0])
+			map_to_odom.pose.pose.position.y = float(xyz[1])
+			map_to_odom.pose.pose.position.z = float(xyz[2])
+			map_to_odom.pose.pose.orientation.x = float(quat[0])
+			map_to_odom.pose.pose.orientation.y = float(quat[1])
+			map_to_odom.pose.pose.orientation.z = float(quat[2])
+			map_to_odom.pose.pose.orientation.w = float(quat[3])
 			map_to_odom.header.stamp = cur_odom_snapshot.header.stamp
 			map_to_odom.header.frame_id = self.get_parameter('map_frame').value
 			self.pub_map_to_odom.publish(map_to_odom)

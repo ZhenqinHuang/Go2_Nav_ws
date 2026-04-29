@@ -11,7 +11,12 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Header
-from sensor_msgs_py import point_cloud2 as pc2
+from sensor_msgs.msg import PointField as _PointField
+
+class _PC2Compat:
+	PointField = _PointField
+
+pc2 = _PC2Compat()
 
 
 class PcdPublisherNode(Node):

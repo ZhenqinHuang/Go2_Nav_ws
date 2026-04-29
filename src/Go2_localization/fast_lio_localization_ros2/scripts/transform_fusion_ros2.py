@@ -11,7 +11,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
-from geometry_msgs.msg import Pose, Point, Quaternion, TransformStamped
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 
 from tf2_ros import TransformBroadcaster
@@ -94,7 +94,13 @@ class TransformFusionNode(Node):
 			quat2 = quaternion_from_matrix(T_map_to_base_link)
 
 			localization = Odometry()
-			localization.pose.pose = Pose(Point(*xyz2), Quaternion(*quat2))
+			localization.pose.pose.position.x = float(xyz2[0])
+			localization.pose.pose.position.y = float(xyz2[1])
+			localization.pose.pose.position.z = float(xyz2[2])
+			localization.pose.pose.orientation.x = float(quat2[0])
+			localization.pose.pose.orientation.y = float(quat2[1])
+			localization.pose.pose.orientation.z = float(quat2[2])
+			localization.pose.pose.orientation.w = float(quat2[3])
 			localization.twist = cur_odom.twist
 			localization.header.stamp = stamp
 			localization.header.frame_id = map_frame

@@ -28,7 +28,7 @@ controller_server:
       max_vel_x: 0.35
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 0.8
+      max_vel_theta: 0.5
       min_speed_xy: 0.0
       max_speed_xy: 0.35
       min_speed_theta: 0.0
@@ -36,33 +36,30 @@ controller_server:
       decel_lim_x: -0.8
       acc_lim_y: 0.0
       decel_lim_y: 0.0
-      acc_lim_theta: 1.5
-      decel_lim_theta: -1.5
-      vx_samples: 12
+      acc_lim_theta: 0.8
+      decel_lim_theta: -0.8
+      vx_samples: 8
       vy_samples: 1
-      vtheta_samples: 12
-      sim_time: 1.2
+      vtheta_samples: 8
+      sim_time: 1.0
       linear_granularity: 0.05
-      angular_granularity: 0.03
+      angular_granularity: 0.025
       transform_tolerance: 3.0
       xy_goal_tolerance: 0.20
       trans_stopped_velocity: 0.10
       short_circuit_trajectory_evaluation: True
       stateful: True
+      # 只保留 Oscillation + BaseObstacle + PathDist + GoalDist
+      # 去掉 PathAlign/GoalAlign（航向对齐→摆头）和 RotateToGoal（接近目标时原地旋转→摆头）
       critics:
-        - RotateToGoal
         - Oscillation
         - BaseObstacle
-        - GoalAlign
-        - PathAlign
         - PathDist
         - GoalDist
       BaseObstacle.scale: 0.02
-      PathAlign.scale: 24.0
-      GoalAlign.scale: 16.0
-      PathDist.scale: 24.0
-      GoalDist.scale: 20.0
-      RotateToGoal.scale: 24.0
+      PathDist.scale: 36.0
+      GoalDist.scale: 24.0
+      Oscillation.x_only_threshold: 0.05
 
 local_costmap:
   local_costmap:

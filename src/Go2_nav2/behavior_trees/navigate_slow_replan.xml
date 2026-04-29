@@ -1,0 +1,33 @@
+<!--
+  0.2 Hz 重规划版本（每 5 秒重规划一次）。
+  原版 1 Hz 重规划 + 1 Hz ICP 矫正会同步触发：每次 ICP 改变 map->odom 后，
+  BT 立即生成新路径，DWB 追着新路径方向摆头。
+  降低到 0.2 Hz 后，路径在 5 秒内稳定，DWB 不会频繁收到方向变化的新路径。
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="0.2">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <SequenceStar name="RecoveryActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+          <Spin spin_dist="1.57"/>
+          <Wait wait_duration="5"/>
+        </SequenceStar>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

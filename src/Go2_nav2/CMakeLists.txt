@@ -53,6 +53,12 @@ install(
 )
 
 install(
+  DIRECTORY behavior_trees/
+  DESTINATION share/${PROJECT_NAME}/behavior_trees
+  FILES_MATCHING PATTERN "*.xml"
+)
+
+install(
   DIRECTORY rviz/
   DESTINATION share/${PROJECT_NAME}/rviz
   FILES_MATCHING PATTERN "*.rviz"

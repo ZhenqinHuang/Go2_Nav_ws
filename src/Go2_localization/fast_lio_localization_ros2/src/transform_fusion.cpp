@@ -19,8 +19,10 @@ public:
 		this->declare_parameter<std::string>("map_frame", "map");
 		this->declare_parameter<std::string>("odom_frame", "odom");
 		this->declare_parameter<std::string>("base_link_frame", "base_link");
-		// map→odom 矫正平滑时间常数（秒）。越小响应越快但抖动越明显；建议 1.0~2.0。
-		this->declare_parameter<double>("correction_time_constant", 1.5);
+		// 平移矫正时间常数（秒）：快速修正位置漂移
+		this->declare_parameter<double>("correction_time_constant_xy", 0.3);
+		// 旋转矫正时间常数（秒）：慢速修正航向，避免 yaw 突变触发 Nav2 摆头
+		this->declare_parameter<double>("correction_time_constant_yaw", 3.0);
 
 		pub_localization_ = this->create_publisher<nav_msgs::msg::Odometry>("/localization", 10);
 		tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
@@ -57,15 +59,14 @@ private:
 		return inv;
 	}
 
-	// 将当前 T_smooth 向 T_target 做指数平滑一步（translation LERP + rotation SLERP）
-	void blendTowardsTarget(double alpha) {
+	// 平移用 alpha_xy，旋转用 alpha_yaw，分别平滑
+	void blendTowardsTarget(double alpha_xy, double alpha_yaw) {
 		T_smooth_map_to_odom_.block<3,1>(0,3) =
-			(1.0 - alpha) * T_smooth_map_to_odom_.block<3,1>(0,3) +
-			alpha * T_target_map_to_odom_.block<3,1>(0,3);
+			(1.0 - alpha_xy) * T_smooth_map_to_odom_.block<3,1>(0,3) +
+			alpha_xy * T_target_map_to_odom_.block<3,1>(0,3);
 		Eigen::Quaterniond q_cur(T_smooth_map_to_odom_.block<3,3>(0,0));
 		Eigen::Quaterniond q_tgt(T_target_map_to_odom_.block<3,3>(0,0));
-		Eigen::Quaterniond q_new = q_cur.slerp(alpha, q_tgt).normalized();
-		T_smooth_map_to_odom_.block<3,3>(0,0) = q_new.toRotationMatrix();
+		T_smooth_map_to_odom_.block<3,3>(0,0) = q_cur.slerp(alpha_yaw, q_tgt).normalized().toRotationMatrix();
 	}
 
 	void onTimer() {
@@ -73,13 +74,14 @@ private:
 		const std::string odom_frame = this->get_parameter("odom_frame").as_string();
 		const std::string base_link_frame = this->get_parameter("base_link_frame").as_string();
 
-		// 每个定时器周期向目标值平滑靠近（指数滤波）
 		if (has_map_to_odom_) {
 			double publish_rate = this->get_parameter("publish_rate").as_double();
-			double tau = this->get_parameter("correction_time_constant").as_double();
 			double dt = 1.0 / std::max(1.0, publish_rate);
-			double alpha = 1.0 - std::exp(-dt / std::max(1e-3, tau));
-			blendTowardsTarget(alpha);
+			double tau_xy  = this->get_parameter("correction_time_constant_xy").as_double();
+			double tau_yaw = this->get_parameter("correction_time_constant_yaw").as_double();
+			double alpha_xy  = 1.0 - std::exp(-dt / std::max(1e-3, tau_xy));
+			double alpha_yaw = 1.0 - std::exp(-dt / std::max(1e-3, tau_yaw));
+			blendTowardsTarget(alpha_xy, alpha_yaw);
 		}
 
 		const Eigen::Matrix4d &T_map_to_odom = T_smooth_map_to_odom_;

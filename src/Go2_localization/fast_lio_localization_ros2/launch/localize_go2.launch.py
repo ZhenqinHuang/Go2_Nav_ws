@@ -54,8 +54,8 @@ def generate_launch_description():
             'map_voxel_size': 0.25,    # 稍大体素，减少地图点数，ICP更快
             'scan_voxel_size': 0.15,   # ICP扫描点降采样，减少法线估计计算量
             'fov': 6.28,
-            # 每 3 秒矫正一次（CPU 与实时性的平衡点）
-            'freq_localization': 0.33,
+            # 每 1 秒矫正一次；实际周期 = ICP耗时 + sleep，真实频率约 0.8~1 Hz
+            'freq_localization': 1.0,
             # 稍微缩小 FOV 半径减少 submap 点数，加快 ICP
             'fov_far': 12.0,
             # MSE 阈值：与原始默认值保持一致，过小会导致有效匹配被拒绝
@@ -80,8 +80,10 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # ICP 矫正平滑时间常数：1.5s 内平滑过渡，避免 TF 阶跃跳变影响 Nav2
-            'correction_time_constant': 1.5,
+            # 平移矫正快（0.3s），旋转矫正慢（3s）
+            # yaw 矫正慢可避免航向突变触发 DWB 摆头
+            'correction_time_constant_xy': 0.3,
+            'correction_time_constant_yaw': 3.0,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

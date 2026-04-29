@@ -26,6 +26,8 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
     motion_deadband_ = this->declare_parameter<double>("motion_deadband", 0.03);
     stand_up_settle_sec_ =
         this->declare_parameter<double>("stand_up_settle_sec", 0.6);
+    // EMA 平滑系数：1=无平滑，0.85=轻量滤尖峰，0.5=强平滑（会引入滞后）
+    vyaw_alpha_ = this->declare_parameter<double>("vyaw_smooth_alpha", 0.85);
 
     cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
         cmd_vel_topic_, rclcpp::SystemDefaultsQoS(),
@@ -80,17 +82,14 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
 
     target_vx_ = clamp(vx, -max_vx_, max_vx_);
     target_vy_ = clamp(vy, -max_vy_, max_vy_);
-    target_vyaw_ = clamp(vyaw, -max_vyaw_, max_vyaw_);
+    double raw_vyaw = clamp(vyaw, -max_vyaw_, max_vyaw_);
 
-    if (std::fabs(target_vx_) < motion_deadband_) {
-      target_vx_ = 0.0;
-    }
-    if (std::fabs(target_vy_) < motion_deadband_) {
-      target_vy_ = 0.0;
-    }
-    if (std::fabs(target_vyaw_) < motion_deadband_) {
-      target_vyaw_ = 0.0;
-    }
+    if (std::fabs(target_vx_) < motion_deadband_) target_vx_ = 0.0;
+    if (std::fabs(target_vy_) < motion_deadband_) target_vy_ = 0.0;
+    if (std::fabs(raw_vyaw)   < motion_deadband_) raw_vyaw   = 0.0;
+
+    // EMA 平滑角速度：新指令与历史值加权混合，抑制控制器帧间 vtheta 跳变
+    target_vyaw_ = vyaw_alpha_ * raw_vyaw + (1.0 - vyaw_alpha_) * target_vyaw_;
 
     last_cmd_time_ = this->now();
   }
@@ -150,6 +149,7 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
   double motion_deadband_{0.03};
   double stand_up_settle_sec_{0.6};
 
+  double vyaw_alpha_{0.5};
   double target_vx_{0.0};
   double target_vy_{0.0};
   double target_vyaw_{0.0};

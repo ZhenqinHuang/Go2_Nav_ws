@@ -19,6 +19,8 @@ public:
 		this->declare_parameter<std::string>("map_frame", "map");
 		this->declare_parameter<std::string>("odom_frame", "odom");
 		this->declare_parameter<std::string>("base_link_frame", "base_link");
+		// map→odom 矫正平滑时间常数（秒）。越小响应越快但抖动越明显；建议 1.0~2.0。
+		this->declare_parameter<double>("correction_time_constant", 1.5);
 
 		pub_localization_ = this->create_publisher<nav_msgs::msg::Odometry>("/localization", 10);
 		tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
@@ -55,15 +57,32 @@ private:
 		return inv;
 	}
 
+	// 将当前 T_smooth 向 T_target 做指数平滑一步（translation LERP + rotation SLERP）
+	void blendTowardsTarget(double alpha) {
+		T_smooth_map_to_odom_.block<3,1>(0,3) =
+			(1.0 - alpha) * T_smooth_map_to_odom_.block<3,1>(0,3) +
+			alpha * T_target_map_to_odom_.block<3,1>(0,3);
+		Eigen::Quaterniond q_cur(T_smooth_map_to_odom_.block<3,3>(0,0));
+		Eigen::Quaterniond q_tgt(T_target_map_to_odom_.block<3,3>(0,0));
+		Eigen::Quaterniond q_new = q_cur.slerp(alpha, q_tgt).normalized();
+		T_smooth_map_to_odom_.block<3,3>(0,0) = q_new.toRotationMatrix();
+	}
+
 	void onTimer() {
 		const std::string map_frame = this->get_parameter("map_frame").as_string();
 		const std::string odom_frame = this->get_parameter("odom_frame").as_string();
 		const std::string base_link_frame = this->get_parameter("base_link_frame").as_string();
 
-		Eigen::Matrix4d T_map_to_odom = Eigen::Matrix4d::Identity();
-		if (cur_map_to_odom_) {
-			T_map_to_odom = poseToMat(*cur_map_to_odom_);
+		// 每个定时器周期向目标值平滑靠近（指数滤波）
+		if (has_map_to_odom_) {
+			double publish_rate = this->get_parameter("publish_rate").as_double();
+			double tau = this->get_parameter("correction_time_constant").as_double();
+			double dt = 1.0 / std::max(1.0, publish_rate);
+			double alpha = 1.0 - std::exp(-dt / std::max(1e-3, tau));
+			blendTowardsTarget(alpha);
 		}
+
+		const Eigen::Matrix4d &T_map_to_odom = T_smooth_map_to_odom_;
 
 		// Publish TF map->odom
 		auto now = this->now();
@@ -109,11 +128,20 @@ private:
 	}
 
 	void cbSaveMapToOdom(const nav_msgs::msg::Odometry::SharedPtr msg) {
-		cur_map_to_odom_ = *msg;
+		T_target_map_to_odom_ = poseToMat(*msg);
+		if (!has_map_to_odom_) {
+			// 第一次收到矫正结果时直接同步（无历史可平滑）
+			T_smooth_map_to_odom_ = T_target_map_to_odom_;
+			has_map_to_odom_ = true;
+		}
 	}
 
-	std::optional<nav_msgs::msg::Odometry> cur_map_to_odom_;
 	std::optional<nav_msgs::msg::Odometry> cur_odom_to_baselink_;
+	// 平滑后的当前 map→odom（用于发布 TF）
+	Eigen::Matrix4d T_smooth_map_to_odom_ = Eigen::Matrix4d::Identity();
+	// ICP 最新矫正目标值
+	Eigen::Matrix4d T_target_map_to_odom_ = Eigen::Matrix4d::Identity();
+	bool has_map_to_odom_ = false;
 
 	rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_localization_;
 	std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;

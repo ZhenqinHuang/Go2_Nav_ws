@@ -6,6 +6,8 @@ find_package(ament_cmake REQUIRED)
 install(PROGRAMS
   check_nav2_ready.sh
   go2_nav_start.sh
+  run_keyboard_teleop.sh
+  run_nav2.sh
   time_sync_start.sh
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -1,0 +1,27 @@
+recoveries_server:
+  ros__parameters:
+    use_sim_time: False
+    cycle_frequency: 10.0
+    recovery_plugins: ["spin", "backup", "wait"]
+
+    spin:
+      plugin: "nav2_recoveries/Spin"
+      simulate_ahead_time: 1.5
+      max_rotational_vel: 0.6
+      min_rotational_vel: 0.2
+      rotational_acc_lim: 1.0
+
+    backup:
+      plugin: "nav2_recoveries/BackUp"
+      simulate_ahead_time: 1.5
+      max_backup_vel: 0.1
+      min_backup_vel: 0.05
+      backup_dist: 0.2
+
+    wait:
+      plugin: "nav2_recoveries/Wait"
+      wait_duration: 2.0
+
+recoveries_server_rclcpp_node:
+  ros__parameters:
+    use_sim_time: False

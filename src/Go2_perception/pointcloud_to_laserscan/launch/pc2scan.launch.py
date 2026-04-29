@@ -39,11 +39,24 @@ def generate_launch_description():
         output='screen',
         remappings=[
             ('cloud_in', '/cloud_filtered'),
-            ('scan',     '/scan'),
+            ('scan',     '/scan_raw'),   # 发到 /scan_raw，由 relay 转为 BEST_EFFORT
         ],
         parameters=[
             os.path.join(pkg_share, 'config', 'pc2scan_params.yaml'),
             {'use_inf': True, 'inf_epsilon': 1.0},
+        ],
+    )
+
+    # nav2_costmap_2d (Foxy) 用 SensorDataQoS (BEST_EFFORT) 订阅传感器话题
+    # pointcloud_to_laserscan 默认发 RELIABLE，QoS 不匹配导致 costmap 收不到数据
+    # 此节点做 RELIABLE -> BEST_EFFORT 转发
+    scan_relay_node = Node(
+        package='go2_pc2scan',
+        executable='scan_qos_relay.py',
+        name='scan_qos_relay',
+        output='screen',
+        parameters=[
+            {'input_topic': '/scan_raw', 'output_topic': '/scan'},
         ],
     )
 
@@ -55,4 +68,5 @@ def generate_launch_description():
         output_frame_arg,
         cloud_filter_node,
         pc2scan_node,
+        scan_relay_node,
     ])

@@ -16,6 +16,7 @@ ament_python_install_package(${PROJECT_NAME})
 
 install(PROGRAMS
   go2_pc2scan/cloud_filter_node.py
+  go2_pc2scan/scan_qos_relay.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

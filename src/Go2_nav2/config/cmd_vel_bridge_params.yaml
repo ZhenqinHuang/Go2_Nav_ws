@@ -1,0 +1,25 @@
+go2_cmd_vel_bridge_node:
+  ros__parameters:
+    # Nav2 输出的 cmd_vel 话题
+    cmd_vel_topic: "/cmd_vel"
+
+    # 速度限幅（Go2 运动模式下的安全上限）
+    max_vx: 0.35       # 前进最大速度 m/s（与 controller_server.yaml 的 max_vel_x 一致）
+    max_vy: 0.0        # Go2 不支持横向移动，保持 0
+    max_vyaw: 0.8      # 最大转速 rad/s（与 max_vel_theta 一致）
+
+    # 死区：低于此值视为零速，避免微小抖动驱动机器人
+    motion_deadband: 0.03
+
+    # cmd_vel 超时：超过此时间未收到新指令则停止运动
+    cmd_timeout_sec: 0.35
+
+    # 控制循环频率（Hz），建议与 controller_frequency 相近或更高
+    publish_rate_hz: 50.0
+
+    # 收到非零 cmd_vel 时自动发送 StandUp 指令（导航前机器人需处于站立状态）
+    stand_up_on_motion: true
+    # StandUp 后等待稳定的时间（s），稳定后再开始移动
+    stand_up_settle_sec: 0.6
+    # 启动时立即发送 StandUp（false = 等到有运动指令时再站起）
+    auto_stand_up: false

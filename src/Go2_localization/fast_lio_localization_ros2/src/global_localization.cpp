@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 
 #include <Eigen/Dense>
 
@@ -41,6 +42,9 @@ public:
 		this->declare_parameter<std::string>("map_frame", "map");
 		this->declare_parameter<std::string>("odom_frame", "odom");
 		this->declare_parameter<std::string>("base_link_frame", "base_link");
+		// 单次最大允许矫正量，超出则拒绝该 ICP 结果（初始定位不受限）
+		this->declare_parameter<double>("max_delta_xy", 0.5);     // m
+		this->declare_parameter<double>("max_delta_yaw_rad", 0.52); // ~30°
 		// Keep param for compatibility; not used
 		this->declare_parameter<bool>("use_gicp", false);
 
@@ -237,14 +241,22 @@ private:
 	}
 
 	bool globalLocalization(Eigen::Matrix4d &pose_estimation) {
+		// 在持有锁的情况下拷贝共享数据，避免与回调线程竞争
+		pcl::PointCloud<pcl::PointXYZ>::Ptr scan_copy;
+		nav_msgs::msg::Odometry::SharedPtr odom_copy;
+		{
+			std::lock_guard<std::mutex> lk(scan_odom_mutex_);
+			scan_copy = cur_scan_;
+			odom_copy = cur_odom_;
+		}
 		auto gm = global_map_;
-		if (!gm || !cur_scan_ || !cur_odom_) return false;
+		if (!gm || !scan_copy || !odom_copy) return false;
 
 		RCLCPP_INFO(this->get_logger(), "Global localization by scan-to-map matching ...");
-		auto submap = cropGlobalMapInFOV(gm, pose_estimation, *cur_odom_);
+		auto submap = cropGlobalMapInFOV(gm, pose_estimation, *odom_copy);
 
-		auto [T1, mse1] = registrationAtScale(cur_scan_, submap, pose_estimation, 5.0);
-		auto [T2, mse2] = registrationAtScale(cur_scan_, submap, T1, 1.0);
+		auto [T1, mse1] = registrationAtScale(scan_copy, submap, pose_estimation, 5.0);
+		auto [T2, mse2] = registrationAtScale(scan_copy, submap, T1, 1.0);
 		double mse = mse2;
 
 		bool map2odom_completed = this->get_parameter("map2odom_completed").as_bool();
@@ -257,6 +269,21 @@ private:
 		// Direct MSE threshold: mse < localization_th
 		double mse_th = std::max(1e-6, this->get_parameter("localization_th").as_double());
 		if (mse < mse_th) {
+			// 初始定位后验证矫正量，防止异常 ICP 结果直接跳变
+			if (initial_loc_done_) {
+				Eigen::Matrix4d delta = inverseSE3(pose_estimation) * T2;
+				double dt_xy = delta.block<2,1>(0,3).norm();
+				double yaw = std::abs(std::atan2(delta(1,0), delta(0,0)));
+				double max_xy  = this->get_parameter("max_delta_xy").as_double();
+				double max_yaw = this->get_parameter("max_delta_yaw_rad").as_double();
+				if (dt_xy > max_xy || yaw > max_yaw) {
+					RCLCPP_WARN(this->get_logger(),
+						"Correction rejected (dt_xy=%.3fm > %.3f or yaw=%.3frad > %.3f)",
+						dt_xy, max_xy, yaw, max_yaw);
+					return false;
+				}
+			}
+			initial_loc_done_ = true;
 			pose_estimation = T2;
 
 			nav_msgs::msg::Odometry map_to_odom;
@@ -268,7 +295,7 @@ private:
 			map_to_odom.pose.pose.orientation.y = q.y();
 			map_to_odom.pose.pose.orientation.z = q.z();
 			map_to_odom.pose.pose.orientation.w = q.w();
-			map_to_odom.header.stamp = cur_odom_->header.stamp;
+			map_to_odom.header.stamp = odom_copy->header.stamp;
 			map_to_odom.header.frame_id = this->get_parameter("map_frame").as_string();
 			pub_map_to_odom_->publish(map_to_odom);
 			RCLCPP_INFO(this->get_logger(), "relocalization mse: %.6f (mse_th=%.6f)", mse, mse_th);
@@ -316,13 +343,17 @@ private:
 
 	// Callbacks
 	void cbSaveCurOdom(const nav_msgs::msg::Odometry::SharedPtr msg) {
+		std::lock_guard<std::mutex> lk(scan_odom_mutex_);
 		cur_odom_ = msg;
 	}
 
 	void cbSaveCurScan(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
 		pcl::fromROSMsg(*msg, *cloud);
-		cur_scan_ = cloud;
+		{
+			std::lock_guard<std::mutex> lk(scan_odom_mutex_);
+			cur_scan_ = cloud;
+		}
 
 		// republish with odom frame
 		sensor_msgs::msg::PointCloud2 out;
@@ -351,9 +382,12 @@ private:
 	std::atomic<bool> alive_{true};
 	std::thread worker_;
 	pcl::PointCloud<pcl::PointNormal>::Ptr global_map_;
-	pcl::PointCloud<pcl::PointNormal>::Ptr global_map_ds_; // 新增：缓存降采样后的全局地图
+	pcl::PointCloud<pcl::PointNormal>::Ptr global_map_ds_;
+	// cur_scan_ 和 cur_odom_ 被 worker_ 线程读取、ROS 回调写入，需要 mutex 保护
+	std::mutex scan_odom_mutex_;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cur_scan_;
 	nav_msgs::msg::Odometry::SharedPtr cur_odom_;
+	bool initial_loc_done_ = false; // 初始定位完成后才启用 delta 验证
 
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pc_in_map_;
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_submap_;

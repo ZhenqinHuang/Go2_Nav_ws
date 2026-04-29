@@ -80,7 +80,7 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 |---|---|
 | `src/Go2_bringup` | 启动脚本：`go2_nav_start.sh`、`time_sync_start.sh`、`check_nav2_ready.sh` |
 | `src/Go2_localization` | 定位模块：odom_tf_bridge + fast_lio_localization_ros2 |
-| `src/Go2_perception` | 感知模块：go2_pc2scan（点云过滤 + LaserScan 转换） |
+| `src/Go2_perception` | 感知模块：go2_pc2scan（点云过滤 + LaserScan 转换）、pcd_to_map（PCD → 2D 占据栅格地图） |
 | `src/Go2_time_sync` | 时间同步：PTP Master 向 MID360 提供精确时间 |
 | `src/Go2_Slam` | 建图说明（FAST-LIO2 离线建图） |
 
@@ -180,6 +180,7 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 - `odom_tf_bridge`：`/Odometry` (camera_init→body) → `/odom` (odom→base_link) + TF 广播
 - `fast_lio_localization_ros2`：PCD 地图 ICP 重定位，发布 `map→odom` TF
 - `go2_pc2scan`：点云高度过滤 + LaserScan 转换
+- `pcd_to_map`：PCD 点云 → 2D 占据栅格地图（`.pgm` + `.yaml`），供 Nav2 map_server 使用
 - `go2_nav_start.sh`：一键有序启动全链路
 - `check_nav2_ready.sh`：Nav2 前置链路完整性检查
 - `Go2_time_sync`：PTP 时间同步（MID360 ↔ 主机）
@@ -188,4 +189,3 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 - Nav2 完整配置（costmap、行为树、路径规划参数文件）
 - Nav2 启动脚本 `nav2_start.sh`
-正在完善 Go2 机器狗自主导航项目的重定位模块。所有代码和文档问题已修复并推送到 GitHub，等待明天实机测试验证。 

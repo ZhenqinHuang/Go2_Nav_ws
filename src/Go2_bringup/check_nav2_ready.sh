@@ -84,7 +84,7 @@ check_hz /scan                   8   "/scan (LaserScan)"
 check_hz /odom                   8   "/odom (Odometry)"
 check_hz /cloud_registered       8   "/cloud_registered (world 帧，ICP 定位输入)"
 check_hz /cloud_registered_body  8   "/cloud_registered_body (body 帧，点云滤波输入)"
-check_hz /map_to_odom            0.3 "/map_to_odom (ICP 重定位，~0.5 Hz 正常)"
+check_hz /map_to_odom            1.0 "/map_to_odom (ICP 重定位，目标 1.5 Hz)"
 
 # ─────────────────────────────────────────────
 section "3. TF 树完整性（Nav2 链路）"

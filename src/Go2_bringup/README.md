@@ -28,10 +28,10 @@ Go2 导航链路的一键启动脚本目录。
 
 链路就绪后自动打印节点列表、话题列表和各关键话题频率。
 
-**默认启动（开发机路径）：**
+**默认启动（实机路径）：**
 
 ```bash
-bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
+bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 ```
 
 **实机路径（Go2 机载 /home/unitree）：**
@@ -41,7 +41,7 @@ LIVOX_WS=/home/unitree/ws_Livox \
 FASTLIO_WS=/home/unitree/ws_fastlio2 \
 GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
 FASTLIO_CONFIG=/home/unitree/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml \
-FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd \
+FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd \
 bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 ```
 
@@ -53,7 +53,7 @@ bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 | `FASTLIO_WS` | `~/ws_fastlio2` | FAST-LIO2 工作空间路径 |
 | `GO2_NAV_WS` | 脚本所在上两级目录 | 本项目工作空间路径 |
 | `FASTLIO_CONFIG` | `~/ws_fastlio2/.../mid360.yaml` | FAST-LIO2 配置文件路径 |
-| `FASTLIO_LOC_PCD` | `Go2_localization/PCD/MID360.pcd` | 定位用 PCD 地图文件路径 |
+| `FASTLIO_LOC_PCD` | `Go2_localization/PCD/MID360_localization_filtered.pcd` | 定位用 PCD 地图文件路径 |
 | `RVIZ` | `false` | 是否同步启动 RViz2 |
 | `WAIT_TIMEOUT` | `30` | 每步等待超时时间（秒） |
 
@@ -76,7 +76,7 @@ bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 | 检查项 | 内容 |
 |---|---|
 | 1. 必要话题 | `/odom`、`/scan`、`/cloud_registered`、`/cloud_registered_body`、`/livox/lidar`、`/livox/imu`、`/Odometry`、`/map_to_odom` |
-| 2. 话题频率 | `/scan` ≥ 8 Hz，`/odom` ≥ 8 Hz，`/cloud_registered` ≥ 8 Hz（ICP 输入），`/cloud_registered_body` ≥ 8 Hz（点云滤波输入），`/map_to_odom` ≥ 0.3 Hz |
+| 2. 话题频率 | `/scan` ≥ 8 Hz，`/odom` ≥ 8 Hz，`/cloud_registered` ≥ 8 Hz（ICP 输入），`/cloud_registered_body` ≥ 8 Hz（点云滤波输入），`/map_to_odom` ≥ 1.0 Hz |
 | 3. TF 完整性 | `odom→base_link`，`map→odom`，`map→base_link` |
 | 4. 时间戳新鲜度 | `/odom`、`/cloud_registered`、`/cloud_registered_body`、`/scan` 时间戳 age ≤ 1 s |
 | 5. `/scan` 质量 | `frame_id = base_link`，角度覆盖正常 |
@@ -84,7 +84,7 @@ bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 | 7. 关键节点 | 所有必要节点均存活 |
 
 ```bash
-bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
+bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
 ```
 
 全部通过后退出码为 0，有失败项则退出码为 1。
@@ -95,10 +95,10 @@ bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
 
 ```bash
 # 终端 1：导航前置链路
-bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
+bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 
 # 终端 2：链路验证
-bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
+bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
 ```
 
 ---
@@ -107,7 +107,7 @@ bash /home/wangzhenjie/Go2_Nav_ws/src/Go2_bringup/check_nav2_ready.sh
 
 **Q：某步等待超时（如 `/map_to_odom` 不出现）**
 - 查看对应日志：`cat /tmp/go2_nav_bringup/fast_lio_localization.log`
-- 确认 PCD 地图文件存在：`ls ~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd`
+- 确认定位 PCD 地图文件存在：`ls ~/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd`
 - 确认 open3d 已安装：`python3 -c "import open3d"`
 - ICP 初次匹配需要几秒到十几秒，耐心等待
 

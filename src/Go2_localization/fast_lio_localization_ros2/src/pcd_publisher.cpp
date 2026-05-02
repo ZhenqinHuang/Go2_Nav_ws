@@ -17,6 +17,7 @@ public:
 		this->declare_parameter<std::string>("map", "");
 		this->declare_parameter<std::string>("frame_id", "map3d");
 		this->declare_parameter<double>("rate", 5.0);
+		this->declare_parameter<bool>("publish_once", true);
 
 		rclcpp::QoS qos(1);
 		qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
@@ -56,6 +57,10 @@ private:
 		msg.header.frame_id = this->get_parameter("frame_id").as_string();
 		msg.header.stamp = this->now();
 		publisher_->publish(msg);
+		if (this->get_parameter("publish_once").as_bool()) {
+			timer_->cancel();
+			RCLCPP_INFO(this->get_logger(), "Static PCD map published once");
+		}
 	}
 
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;

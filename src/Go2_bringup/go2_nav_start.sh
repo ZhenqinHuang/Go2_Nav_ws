@@ -28,7 +28,7 @@ GO2_NAV_WS="${GO2_NAV_WS:-${DEFAULT_GO2_WS}}"
 LIVOX_WS="${LIVOX_WS:-${HOME}/ws_Livox}"
 FASTLIO_WS="${FASTLIO_WS:-${HOME}/ws_fastlio2}"
 FASTLIO_CONFIG="${FASTLIO_CONFIG:-${FASTLIO_WS}/src/FAST_LIO_ROS2/config/mid360.yaml}"
-FASTLIO_LOC_PCD="${FASTLIO_LOC_PCD:-${GO2_NAV_WS}/src/Go2_localization/PCD/MID360.pcd}"
+FASTLIO_LOC_PCD="${FASTLIO_LOC_PCD:-${GO2_NAV_WS}/src/Go2_localization/PCD/MID360_localization_filtered.pcd}"
 
 RVIZ="${RVIZ:-false}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-30}"

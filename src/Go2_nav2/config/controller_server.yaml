@@ -8,6 +8,7 @@ controller_server:
     progress_checker_plugin: "progress_checker"
     goal_checker_plugin: "goal_checker"
     controller_plugins: ["FollowPath"]
+    odom_topic: "/odom"
     transform_tolerance: 0.8
 
     progress_checker:

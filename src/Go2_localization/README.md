@@ -22,7 +22,7 @@ MID360 LiDAR + IMU
         │
         ├─ /cloud_registered ──────> fast_lio_localization_ros2
         │   (world 帧，ICP 输入)     ├─ pcd_publisher: 发布 /map3d (1 Hz, TRANSIENT_LOCAL)
-        │                            ├─ global_localization: ICP 匹配 → /map_to_odom (0.5 Hz)
+        │                            ├─ global_localization: ICP 匹配 → /map_to_odom (目标 1.5 Hz)
         │                            └─ transform_fusion: map→odom TF (100 Hz) + /localization
 ```
 
@@ -65,7 +65,8 @@ map→odom TF.header.stamp = /odom.stamp
 Go2_localization/
 ├── README.md
 ├── PCD/
-│   └── MID360.pcd                        # 全局地图（FAST-LIO2 建图结果）
+│   ├── MID360.pcd                        # 原始全局地图（FAST-LIO2 建图结果）
+│   └── MID360_localization_filtered.pcd  # 降采样后的重定位地图
 ├── odom_tf_bridge/                        # FAST-LIO2 里程计 → Nav2 适配桥
 │   ├── config/odom_bridge_params.yaml     # 节点参数
 │   ├── launch/odom_bridge.launch.py
@@ -74,14 +75,14 @@ Go2_localization/
     ├── launch/
     │   └── localize_go2.launch.py         # Go2 专用
 	    ├── scripts/
-	    │   ├── pcd_publisher.py              # 加载 PCD 文件并发布为 /map3d
+	    │   ├── pcd_publisher.cpp             # 加载 PCD 文件并发布为 /map3d
 	    │   ├── global_localization_ros2.py   # Python 旧版（保留备用）
 	    │   └── transform_fusion_ros2.py      # Python 旧版（保留备用）
 	    ├── src/
 	    │   ├── global_localization.cpp       # C++ ICP 重定位，发布 /map_to_odom
 	    │   └── transform_fusion.cpp          # C++ TF 融合，平滑广播 map→odom
 	    └── PCD/
-        └── MID360.pcd -> ../PCD/MID360.pcd  # 软链接
+        └── MID360.pcd -> ../PCD/MID360_localization_filtered.pcd  # 软链接
 ```
 
 ---
@@ -99,7 +100,7 @@ Go2_localization/
 三个节点协同工作，均通过 `localize_go2.launch.py` 启动：
 
 #### pcd_publisher
-- 加载 `PCD/MID360.pcd` 文件
+- 默认加载 `PCD/MID360_localization_filtered.pcd` 文件（通过包内 `PCD/MID360.pcd` 软链接）
 - 发布 `/map3d`（frame_id = `map`，TRANSIENT_LOCAL，1 Hz）
 - TRANSIENT_LOCAL 确保后启动的订阅者也能收到地图
 
@@ -157,7 +158,7 @@ source install/setup.bash
 将 FAST-LIO2 建图生成的 PCD 文件放到：
 
 ```
-src/Go2_localization/PCD/MID360.pcd
+src/Go2_localization/PCD/MID360_localization_filtered.pcd
 ```
 
 ### 3. 启动（推荐：一键脚本）
@@ -177,7 +178,7 @@ ros2 launch odom_tf_bridge odom_bridge.launch.py
 
 # 终端 3：fast_lio_localization（含 pcd_publisher、global_localization、transform_fusion）
 ros2 launch fast_lio_localization_ros2 localize_go2.launch.py \
-    map:=~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd rviz:=false
+    map:=~/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd rviz:=false
 ```
 
 ### 5. 验证
@@ -186,7 +187,7 @@ ros2 launch fast_lio_localization_ros2 localize_go2.launch.py \
 # TF 树完整性
 ros2 run tf2_ros tf2_echo map base_link
 
-# 重定位输出（应约 0.5 Hz）
+# 重定位输出（目标 1.5 Hz，建议 ≥ 1.0 Hz）
 ros2 topic hz /map_to_odom
 
 # 融合后完整定位
@@ -225,7 +226,7 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 - 确认 FAST-LIO2 正在发布：`ros2 topic hz /Odometry`
 
 **Q：`map → odom` TF 不更新**
-- 确认 `/map_to_odom` 有数据：`ros2 topic hz /map_to_odom`（应 ~0.5 Hz）
+- 确认 `/map_to_odom` 有数据：`ros2 topic hz /map_to_odom`（目标 1.5 Hz，建议 ≥ 1.0 Hz）
 - 确认地图文件路径正确，pcd_publisher 启动时会打印加载路径
 - 检查 ICP 拟合度：若环境变化大，可适当降低 `localization_th`（如 0.98）
 

@@ -43,7 +43,7 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 ```
 
 - `odom → base_link`：odom_tf_bridge 广播，来自 FAST-LIO2 高频里程计（10 Hz）
-- `map → odom`：transform_fusion 广播，来自 ICP 重定位结果（0.5 Hz 更新，100 Hz 广播）
+- `map → odom`：transform_fusion 广播，来自 ICP 重定位结果（目标 1.5 Hz 更新，100 Hz 广播）
 
 ## 时间链路
 
@@ -137,7 +137,7 @@ LIVOX_WS=/home/unitree/ws_Livox \
 FASTLIO_WS=/home/unitree/ws_fastlio2 \
 GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
 FASTLIO_CONFIG=/home/unitree/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml \
-FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd \
+FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd \
 bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
 ```
 
@@ -157,7 +157,7 @@ ros2 run tf2_ros tf2_echo map base_link
 # 关键话题频率
 ros2 topic hz /odom
 ros2 topic hz /scan
-ros2 topic hz /map_to_odom   # ICP 重定位，约 0.5 Hz
+ros2 topic hz /map_to_odom   # ICP 重定位，目标 1.5 Hz，建议 ≥ 1.0 Hz
 
 # 重定位位姿
 ros2 topic echo /localization --once

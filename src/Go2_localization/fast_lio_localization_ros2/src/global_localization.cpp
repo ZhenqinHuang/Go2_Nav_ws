@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <mutex>
 
 #include <Eigen/Dense>
@@ -205,15 +206,19 @@ private:
 			const pcl::PointCloud<pcl::PointNormal>::ConstPtr &map,
 			const Eigen::Matrix4d &initial, double scale) {
 		double scan_voxel = this->get_parameter("scan_voxel_size").as_double() * scale;
-		double map_voxel = this->get_parameter("map_voxel_size").as_double() * scale;
 		// Downsample scan first (XYZ), then estimate normals to reduce cost
 		auto ds_scan_xyz = voxelDownSample(scan, std::max(0.01, scan_voxel));
 		// Estimate normals for scan with a radius tied to voxel size
 		double normal_radius = std::max(0.02, 2.5 * scan_voxel);
 		auto ds_scan = buildScanWithNormals(ds_scan_xyz, normal_radius);
 
-		 // 使用预先降采样的全局地图
-		auto ds_map = global_map_ds_ ? global_map_ds_ : map;
+		// Match against the cropped FOV submap. The global map was already
+		// voxelized once in cbInitGlobalMap(), and cropGlobalMapInFOV() preserves
+		// that density, so avoid re-filtering the target on every ICP scale.
+		auto ds_map = map;
+		if (ds_scan->empty() || ds_map->empty()) {
+			return {initial, std::numeric_limits<double>::infinity()};
+		}
 
 		pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal> icp;
 		icp.setMaxCorrespondenceDistance(1.0 * scale);
@@ -258,6 +263,10 @@ private:
 
 		RCLCPP_INFO(this->get_logger(), "Global localization by scan-to-map matching ...");
 		auto submap = cropGlobalMapInFOV(gm, pose_estimation, *odom_copy);
+		if (submap->empty()) {
+			RCLCPP_WARN(this->get_logger(), "FOV submap is empty, skip localization");
+			return false;
+		}
 
 		auto [T1, mse1] = registrationAtScale(scan_copy, submap, pose_estimation, 5.0);
 		auto [T2, mse2] = registrationAtScale(scan_copy, submap, T1, 1.0);
@@ -336,12 +345,14 @@ private:
 		RCLCPP_INFO(this->get_logger(), "Initialize successfully!");
 		double freq = this->get_parameter("freq_localization").as_double();
 		double period = (freq > 0.0) ? (1.0 / freq) : 2.0;
-		auto sleep_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::duration<double>(period)
-		);
 		while (alive_.load() && rclcpp::ok()) {
+			const auto cycle_start = std::chrono::steady_clock::now();
 			globalLocalization(T_map_to_odom_);
-			rclcpp::sleep_for(sleep_duration);
+			const auto elapsed = std::chrono::steady_clock::now() - cycle_start;
+			const auto target_period = std::chrono::duration<double>(period);
+			if (elapsed < target_period) {
+				rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(target_period - elapsed));
+			}
 		}
 	}
 
@@ -377,8 +388,6 @@ private:
 		// Estimate normals with radius based on voxel size
 		double normal_radius = std::max(0.02, 2.5 * voxel);
 		global_map_ = buildScanWithNormals(ds_map_xyz, normal_radius);
-		// 预先降采样带法线的全局地图
-		global_map_ds_ = voxelDownSampleNormals(global_map_, std::max(0.01, voxel));
 		RCLCPP_INFO(this->get_logger(), "Global map received. points=%zu (downsampled + normals)", global_map_->points.size());
 	}
 
@@ -386,7 +395,6 @@ private:
 	std::atomic<bool> alive_{true};
 	std::thread worker_;
 	pcl::PointCloud<pcl::PointNormal>::Ptr global_map_;
-	pcl::PointCloud<pcl::PointNormal>::Ptr global_map_ds_;
 	// cur_scan_ 和 cur_odom_ 被 worker_ 线程读取、ROS 回调写入，需要 mutex 保护
 	std::mutex scan_odom_mutex_;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cur_scan_;

@@ -148,7 +148,7 @@ python3 scripts/sync_host_time.py --dry-run
 #### 方式三：ROS2 Launch
 
 ```bash
-cd /home/wangzhenjie/Go2_Nav_ws
+cd /home/unitree/Go2_Nav_ws
 colcon build --packages-select go2_time_sync
 source install/setup.bash
 sudo ros2 launch go2_time_sync ptp_sync.launch.py

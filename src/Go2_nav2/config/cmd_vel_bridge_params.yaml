@@ -1,4 +1,4 @@
-go2_cmd_vel_bridge_node:
+go2_cmd_vel_bridge:
   ros__parameters:
     # Nav2 输出的 cmd_vel 话题
     cmd_vel_topic: "/cmd_vel"
@@ -27,16 +27,14 @@ go2_cmd_vel_bridge_node:
     # 定位健康保护：仅 Nav2 bridge 默认启用；键盘遥控通过 ros2 run 启动时默认不启用
     localization_guard_enabled: true
     localization_topic: "/map_to_odom"
-    # /map_to_odom 目标 1.5 Hz，实际频率取决于 ICP 耗时；超过该时间未更新则暂停执行层
-    localization_timeout_sec: 2.5
+    # /map_to_odom 目标 1.5 Hz；超过约两个周期未更新就暂停执行层。
+    localization_timeout_sec: 1.5
     # 检测到较明显的重定位修正后，暂停一小段时间等待 map->odom 平滑收敛
-    # correction_pause_sec 从 1.0 降到 0.4：yaw 融合时间常数已降到 1.2s，
-    # 纠正量传播更快，不需要停那么久；1.0s 会导致每次 ICP 纠正后走走停停
-    # correction_pause_delta_yaw 从 0.12 调到 0.25：0.12rad(7°) 太敏感，
-    # 正常行走的 odom 噪声就能触发暂停
-    correction_pause_sec: 0.4
-    correction_pause_delta_xy: 0.20
-    correction_pause_delta_yaw: 0.25
+    # pause 时间应覆盖 transform_fusion 的大部分平滑过程，避免机器狗边走边追随
+    # 正在变化的 map->odom。yaw tau=0.6s 时，1.2s 约完成 86% 矫正。
+    correction_pause_sec: 1.2
+    correction_pause_delta_xy: 0.12
+    correction_pause_delta_yaw: 0.15
 
     # 角速度 EMA 新指令权重（1=无平滑，越小越平滑但越滞后）
     # 默认 0.85 较接近原始指令；0.65 稍强平滑，降低帧间角速度跳变

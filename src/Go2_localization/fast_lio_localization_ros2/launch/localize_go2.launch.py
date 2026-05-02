@@ -22,13 +22,14 @@ def generate_launch_description():
     # PCD 地图发布
     pcd_pub = Node(
         package='fast_lio_localization_ros2',
-        executable='pcd_publisher.py',
+        executable='pcd_publisher',
         name='map_publisher',
         output='screen',
         parameters=[{
             'map': LaunchConfiguration('map'),
             'frame_id': 'map',
             'rate': 1.0,
+            'publish_once': True,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )
@@ -89,11 +90,11 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # 平移矫正快（0.3s），旋转矫正适中（1.2s）
-            # yaw 时间常数从 3.0s 降到 1.2s：3.0s 时 ICP 纠正量要 3 秒才传给 Nav2，
-            # 期间 DWB 持续用错误航向规划，导致越走越歪
+            # 平移矫正快（0.3s），旋转矫正也要在执行层暂停窗口内基本收敛。
+            # 低频 ICP 只修 map->odom，但 DWB 跟随的全局路径仍会随 map->odom 变化；
+            # 若 yaw 矫正拖太久，机器狗会边走边追一个正在转动的路径。
             'correction_time_constant_xy': 0.3,
-            'correction_time_constant_yaw': 1.2,
+            'correction_time_constant_yaw': 0.6,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

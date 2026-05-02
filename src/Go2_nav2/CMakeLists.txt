@@ -49,12 +49,6 @@ install(
 )
 
 install(
-  DIRECTORY maps/
-  DESTINATION share/${PROJECT_NAME}/maps
-  FILES_MATCHING PATTERN "*.yaml" PATTERN "*.pgm"
-)
-
-install(
   DIRECTORY behavior_trees/
   DESTINATION share/${PROJECT_NAME}/behavior_trees
   FILES_MATCHING PATTERN "*.xml"

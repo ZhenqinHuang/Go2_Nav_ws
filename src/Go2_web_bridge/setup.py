@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'web_bridge_node = Go2_web_bridge.web_bridge_node:main',
+            'tts_node = Go2_web_bridge.tts_node:main',
         ],
     },
 )

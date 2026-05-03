@@ -9,6 +9,7 @@ ament_python_install_package(${PROJECT_NAME})
 
 install(PROGRAMS
   Go2_web_bridge/web_bridge_node.py
+  Go2_web_bridge/tts_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

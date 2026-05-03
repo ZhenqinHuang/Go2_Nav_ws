@@ -258,16 +258,40 @@ class WebBridgeNode(Node):
         if 'ok' in data or data.get('action') == 'pong':
             return
 
+        # 格式一：小程序下发 miniprogram_push
+        if data.get('type') == 'miniprogram_push':
+            self._handle_miniprogram_push(data.get('message', {}))
+            return
+
+        # 格式二：调试页直接发 topic/msg
         inner = data.get('message', {})
         topic = inner.get('topic', '')
         msg_data = inner.get('msg', {})
 
         if not topic:
+            cprint(_Y, f'[RX] 无法识别的消息格式: {str(data)[:200]}')
             return
 
-        # 红色打印完整接收内容
         cprint(_R, f'[RX] topic={topic}  msg={json.dumps(msg_data, ensure_ascii=False)[:200]}')
 
+        if topic == '/goal_pose':
+            self._handle_goal_pose(msg_data)
+        elif topic == '/initialpose':
+            self._handle_initialpose(msg_data)
+        elif topic == '/tts_text':
+            self._handle_tts(msg_data)
+        else:
+            cprint(_Y, f'[RX] 未处理 topic: {topic}')
+
+    def _handle_miniprogram_push(self, message: dict):
+        # 小程序发的是 {"message": {"topic": ..., "msg": ...}}，服务端转发后多了一层
+        nested = message.get('message', {})
+        topic = nested.get('topic', '')
+        msg_data = nested.get('msg', {})
+        if not topic:
+            cprint(_Y, f'[RX] miniprogram_push 缺少 topic: {str(message)[:200]}')
+            return
+        cprint(_R, f'[RX] miniprogram_push → topic={topic}  msg={json.dumps(msg_data, ensure_ascii=False)[:200]}')
         if topic == '/goal_pose':
             self._handle_goal_pose(msg_data)
         elif topic == '/initialpose':

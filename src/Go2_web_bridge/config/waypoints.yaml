@@ -1,0 +1,26 @@
+# 导航点位配置
+# 点位名称须与后台"机器狗点位"配置中的 point 字段完全一致（区分大小写）
+# yaw 单位：弧度（0 = 朝 x 轴正方向，逆时针为正）
+waypoints:
+  # 示例点位，请根据实际地图坐标填写
+  商会空间:
+    x: 1.0
+    y: 0.0
+    yaw: 0.0
+  充电桩:
+    x: 2.0
+    y: 0.0
+    yaw: 0.0
+  # goto_toilet / goto_chamber 等旧式 cmd 映射（cmd 去掉 "goto_" 前缀作为点位名）
+  toilet:
+    x: 3.0
+    y: 0.0
+    yaw: 0.0
+  chamber:
+    x: 4.0
+    y: 0.0
+    yaw: 0.0
+  toilet_door:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0

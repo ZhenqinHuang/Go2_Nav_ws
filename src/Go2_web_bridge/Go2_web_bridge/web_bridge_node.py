@@ -225,7 +225,7 @@ class WebBridgeNode(Node):
             'status_list': [
                 {
                     'goal_info': {
-                        'goal_id': {'uuid': list(s.goal_info.goal_id.uuid)},
+                        'goal_id': {'uuid': [int(b) for b in s.goal_info.goal_id.uuid]},
                         'stamp': {
                             'sec': s.goal_info.stamp.sec,
                             'nanosec': s.goal_info.stamp.nanosec,

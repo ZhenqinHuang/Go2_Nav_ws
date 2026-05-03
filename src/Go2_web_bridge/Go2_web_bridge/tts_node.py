@@ -41,7 +41,7 @@ class TtsNode(Node):
 
         self.declare_parameter('queue_size',  5)
         self.declare_parameter('tts_topic',   '/tts_text')
-        self.declare_parameter('alsa_device', 'plughw:2,0')
+        self.declare_parameter('alsa_device', 'plughw:Device,0')
         self.declare_parameter('voice',       'zh-CN-XiaoxiaoNeural')
         self.declare_parameter('rate',        '+0%')
         self.declare_parameter('volume',      '+0%')

@@ -28,6 +28,10 @@ SERVER_URL="${SERVER_URL:-ws://121.40.212.85:30100/ws/source?token=c7e4a9d2b5f1c
 ODOM_HZ="${ODOM_HZ:-2.0}"
 NAV_STATUS_HZ="${NAV_STATUS_HZ:-1.0}"
 RECONNECT_DELAY="${RECONNECT_DELAY:-5.0}"
+TTS_ALSA_DEVICE="${TTS_ALSA_DEVICE:-plughw:2,0}"
+TTS_LANGUAGE="${TTS_LANGUAGE:-zh}"
+TTS_SPEED="${TTS_SPEED:-150}"
+TTS_AMPLITUDE="${TTS_AMPLITUDE:-100}"
 
 LOG_DIR="${LOG_DIR:-/tmp/go2_nav_bringup}"
 mkdir -p "${LOG_DIR}"
@@ -59,6 +63,7 @@ cleanup() {
         kill -9 -- "-${PGID}" 2>/dev/null || true
     fi
     pkill -9 -f "web_bridge_node" 2>/dev/null || true
+    pkill -9 -f "tts_node" 2>/dev/null || true
     log "已退出"
 }
 trap cleanup INT TERM EXIT
@@ -124,6 +129,7 @@ main() {
     log "SERVER_URL=${SERVER_URL}"
     log "上行: /odom(${ODOM_HZ}Hz)  /localization(${NAV_STATUS_HZ}Hz)  /navigate_to_pose/_action/status"
     log "下行: /goal_pose  /initialpose  /tts_text"
+    log "TTS:  设备=${TTS_ALSA_DEVICE}  语言=${TTS_LANGUAGE}  语速=${TTS_SPEED}"
 
     source_if_exists "${ROS_SETUP}" "ROS 2"
     source_if_exists "${GO2_NAV_WS}/install/setup.bash" "Go2_Nav 工作空间"
@@ -138,6 +144,10 @@ main() {
         "odom_publish_hz:=${ODOM_HZ}" \
         "nav_status_publish_hz:=${NAV_STATUS_HZ}" \
         "reconnect_delay_sec:=${RECONNECT_DELAY}" \
+        "tts_alsa_device:=${TTS_ALSA_DEVICE}" \
+        "tts_language:=${TTS_LANGUAGE}" \
+        "tts_speed:=${TTS_SPEED}" \
+        "tts_amplitude:=${TTS_AMPLITUDE}" \
         > "${LOG_FILE}" 2>&1 &
 
     PID=$!

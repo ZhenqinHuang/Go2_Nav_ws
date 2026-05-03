@@ -79,11 +79,11 @@ def generate_launch_description():
         name='tts_node',
         output='screen',
         parameters=[{
+            'tts_topic':   '/tts_text',
+            'alsa_device': LaunchConfiguration('tts_alsa_device'),
             'language':    LaunchConfiguration('tts_language'),
             'speed':       LaunchConfiguration('tts_speed'),
             'amplitude':   LaunchConfiguration('tts_amplitude'),
-            'alsa_device': LaunchConfiguration('tts_alsa_device'),
-            'tts_topic':   '/tts_text',
         }],
     )
 

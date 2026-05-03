@@ -88,7 +88,8 @@ def generate_launch_description():
                 sim_time_param,
                 {
                     "default_bt_xml_filename": os.path.join(
-                        pkg_share, "behavior_trees", "navigate_slow_replan.xml"
+                        "/opt/ros/foxy/share/nav2_bt_navigator/behavior_trees",
+                        "navigate_w_replanning_and_recovery.xml"
                     ),
                 },
             ],

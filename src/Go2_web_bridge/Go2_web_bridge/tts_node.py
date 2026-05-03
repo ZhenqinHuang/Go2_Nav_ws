@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """
-TTS 语音播报节点
+TTS 语音播报节点（Edge TTS 版）
 
-订阅 /tts_text (std_msgs/String)，通过 espeak-ng + aplay 直接驱动
-ALSA 音频设备（默认 plughw:2,0 = USB Audio Device），完全绕开 PulseAudio。
+订阅 /tts_text (std_msgs/String)，调用微软 Edge TTS 在线合成音频，
+通过 mpg123 直接输出到 ALSA 设备（默认 plughw:2,0 = USB 音频）。
+
+默认声音: zh-CN-XiaoxiaoNeural（晓晓，自然女声）
+其他可选: zh-CN-XiaoyiNeural / zh-CN-XiaohanNeural / zh-CN-XiaomoNeural
 """
 
+import asyncio
+import os
 import queue
 import subprocess
+import tempfile
 import threading
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+
+try:
+    import edge_tts
+except ImportError:
+    raise RuntimeError('请安装 edge-tts: pip3 install edge-tts')
 
 _G  = '\033[0;32m'
 _Y  = '\033[1;33m'
@@ -28,19 +39,19 @@ class TtsNode(Node):
     def __init__(self):
         super().__init__('tts_node')
 
-        self.declare_parameter('queue_size',   5)
-        self.declare_parameter('tts_topic',    '/tts_text')
-        self.declare_parameter('alsa_device',  'plughw:2,0')
-        self.declare_parameter('language',     'zh')
-        self.declare_parameter('speed',        150)
-        self.declare_parameter('amplitude',    100)
+        self.declare_parameter('queue_size',  5)
+        self.declare_parameter('tts_topic',   '/tts_text')
+        self.declare_parameter('alsa_device', 'plughw:2,0')
+        self.declare_parameter('voice',       'zh-CN-XiaoxiaoNeural')
+        self.declare_parameter('rate',        '+0%')
+        self.declare_parameter('volume',      '+0%')
 
-        q_size          = self.get_parameter('queue_size').value
-        tts_topic       = self.get_parameter('tts_topic').value
-        self._device    = self.get_parameter('alsa_device').value
-        self._lang      = self.get_parameter('language').value
-        self._speed     = self.get_parameter('speed').value
-        self._amplitude = self.get_parameter('amplitude').value
+        q_size         = self.get_parameter('queue_size').value
+        tts_topic      = self.get_parameter('tts_topic').value
+        self._device   = self.get_parameter('alsa_device').value
+        self._voice    = self.get_parameter('voice').value
+        self._rate     = self.get_parameter('rate').value
+        self._volume   = self.get_parameter('volume').value
 
         self.create_subscription(String, tts_topic, self._tts_cb, 10)
 
@@ -48,7 +59,7 @@ class TtsNode(Node):
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
         self._worker.start()
 
-        cprint(_C, f'[TTS] 节点启动  话题={tts_topic}  设备={self._device}  语言={self._lang}')
+        cprint(_C, f'[TTS] 节点启动  话题={tts_topic}  声音={self._voice}  设备={self._device}')
 
     def _tts_cb(self, msg: String):
         text = msg.data.strip()
@@ -76,21 +87,29 @@ class TtsNode(Node):
 
     def _speak(self, text: str):
         cprint(_G, f'[TTS] 播报: {text}')
-        try:
-            # pasuspender 临时挂起 PulseAudio，让 aplay 直接访问 ALSA 设备
-            cmd = (
-                f"espeak-ng -v {self._lang} -s {self._speed} -a {self._amplitude}"
-                f" --stdout {subprocess.list2cmdline([text])}"
-                f" | aplay -D {self._device} -q"
+
+        async def _synthesize(tmpfile: str):
+            communicate = edge_tts.Communicate(
+                text, self._voice,
+                rate=self._rate,
+                volume=self._volume,
             )
+            await communicate.save(tmpfile)
+
+        tmpfile = tempfile.mktemp(suffix='.mp3')
+        try:
+            asyncio.run(_synthesize(tmpfile))
+            # pasuspender 临时释放 PulseAudio 对 ALSA 设备的占用
             subprocess.run(
-                ['pasuspender', '--', 'bash', '-c', cmd],
+                ['pasuspender', '--',
+                 'mpg123', '-a', self._device, '-q', tmpfile],
                 stderr=subprocess.DEVNULL,
             )
-        except FileNotFoundError as e:
-            cprint(_Y, f'[TTS] 命令未找到: {e}  (请安装 espeak-ng / alsa-utils / pulseaudio-utils)')
         except Exception as e:
             cprint(_Y, f'[TTS] 播报失败: {e}')
+        finally:
+            if os.path.exists(tmpfile):
+                os.unlink(tmpfile)
 
     def _worker_loop(self):
         while rclpy.ok():

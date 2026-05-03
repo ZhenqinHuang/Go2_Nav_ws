@@ -6,21 +6,21 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    tts_language_arg = DeclareLaunchArgument(
-        'tts_language', default_value='zh',
-        description='espeak-ng 语言代码，如 zh / en',
+    tts_voice_arg = DeclareLaunchArgument(
+        'tts_voice', default_value='zh-CN-XiaoxiaoNeural',
+        description='Edge TTS 声音，如 zh-CN-XiaoxiaoNeural / zh-CN-XiaoyiNeural',
     )
-    tts_speed_arg = DeclareLaunchArgument(
-        'tts_speed', default_value='150',
-        description='语速，单词/分钟',
+    tts_rate_arg = DeclareLaunchArgument(
+        'tts_rate', default_value='+0%',
+        description='语速调整，如 +20% 加快 / -10% 减慢',
     )
-    tts_amplitude_arg = DeclareLaunchArgument(
-        'tts_amplitude', default_value='100',
-        description='音量 0~200',
+    tts_volume_arg = DeclareLaunchArgument(
+        'tts_volume', default_value='+0%',
+        description='音量调整，如 +50%',
     )
     tts_device_arg = DeclareLaunchArgument(
-        'tts_alsa_device', default_value='default',
-        description='ALSA 输出设备，如 default / plughw:1,0',
+        'tts_alsa_device', default_value='plughw:2,0',
+        description='ALSA 输出设备，如 plughw:2,0',
     )
 
     server_url_arg = DeclareLaunchArgument(
@@ -81,16 +81,16 @@ def generate_launch_description():
         parameters=[{
             'tts_topic':   '/tts_text',
             'alsa_device': LaunchConfiguration('tts_alsa_device'),
-            'language':    LaunchConfiguration('tts_language'),
-            'speed':       LaunchConfiguration('tts_speed'),
-            'amplitude':   LaunchConfiguration('tts_amplitude'),
+            'voice':       LaunchConfiguration('tts_voice'),
+            'rate':        LaunchConfiguration('tts_rate'),
+            'volume':      LaunchConfiguration('tts_volume'),
         }],
     )
 
     return LaunchDescription([
-        tts_language_arg,
-        tts_speed_arg,
-        tts_amplitude_arg,
+        tts_voice_arg,
+        tts_rate_arg,
+        tts_volume_arg,
         tts_device_arg,
         server_url_arg,
         odom_topic_arg,

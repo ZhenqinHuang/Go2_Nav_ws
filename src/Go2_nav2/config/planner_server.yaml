@@ -6,7 +6,7 @@ planner_server:
 
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.3
+      tolerance: 0.2
       use_astar: true
       allow_unknown: true
 
@@ -22,11 +22,12 @@ global_costmap:
       robot_base_frame: base_link
       update_frequency: 3.0
       publish_frequency: 2.0
-      robot_radius: 0.22
+      # 与 local_costmap 保持一致，覆盖 Go2 转弯时的扫掠半径
+      robot_radius: 0.25
       # transform_fusion C++ node uses current timestamps; keep this tight so
       # Nav2 does not continue planning against multi-second stale localization.
       transform_tolerance: 1.0
-      plugins: ["static_layer", "obstacle_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_topic: "/map"
@@ -40,6 +41,11 @@ global_costmap:
           data_type: "LaserScan"
           clearing: True
           marking: True
+      # 全局层加膨胀，让 NavFn 一开始就把路径推离墙角，避免 DWB 被拉着擦墙
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.45
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:

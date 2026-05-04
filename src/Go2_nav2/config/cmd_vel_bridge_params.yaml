@@ -6,7 +6,7 @@ go2_cmd_vel_bridge:
     # 速度限幅（Go2 运动模式下的安全上限）
     max_vx: 0.35       # 前进最大速度 m/s（与 controller_server.yaml 的 max_vel_x 一致）
     max_vy: 0.0        # Go2 不支持横向移动，保持 0
-    max_vyaw: 0.8      # 最大转速 rad/s（与 max_vel_theta 一致）
+    max_vyaw: 1.0      # 最大转速 rad/s（与 max_vel_theta 一致）
 
     # 死区：低于此值视为零速，避免微小抖动驱动机器人
     motion_deadband: 0.03

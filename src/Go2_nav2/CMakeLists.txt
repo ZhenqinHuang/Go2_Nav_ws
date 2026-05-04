@@ -36,6 +36,11 @@ install(TARGETS go2_cmd_vel_bridge_node go2_cmd_vel_keyboard_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/nav_tts_announcer.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(
   DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch

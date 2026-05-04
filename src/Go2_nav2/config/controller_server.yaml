@@ -36,10 +36,11 @@ controller_server:
       max_vel_x: 0.35
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 0.8
+      max_vel_theta: 1.0
       min_speed_xy: 0.0
       max_speed_xy: 0.35
-      min_speed_theta: 0.0
+      # Go2 原地旋转时角速度低于 ~0.1 rad/s 步态踩不动，设最低 0.15 保证能转起来
+      min_speed_theta: 0.15
       acc_lim_x: 0.8
       decel_lim_x: -0.8
       acc_lim_y: 0.0
@@ -58,7 +59,10 @@ controller_server:
       transform_tolerance: 0.8
       # 与外层 goal_checker 保持一致；DWB 用这个判断何时切换到 RotateToGoal 阶段
       xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.10
+      # trans_stopped_velocity：DWB 判断"机器狗已经停下来可以原地转"的阈值
+      # Go2 在低速行走时实际 vx 会在 0.05-0.15 之间波动，
+      # 设 0.25 让 DWB 更果断地进入 RotateToGoal 阶段
+      trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics:
@@ -80,11 +84,17 @@ controller_server:
       # GoalAlign: 接近目标时引导航向对齐，权重适中避免过度摆头
       GoalAlign.scale: 16.0
       GoalAlign.forward_point_distance: 0.1
-      # RotateToGoal: 接近目标后原地旋转到目标 yaw，速度限制防止剧烈旋转
-      RotateToGoal.scale: 24.0
-      RotateToGoal.slowing_factor: 5.0
+      # RotateToGoal: 接近目标后原地旋转到目标 yaw
+      # scale 32：权重加大让 DWB 掉头时更果断，不被 PathDist 拉着往前走
+      # slowing_factor 2.0：从 5.0 降低。原来接近目标 yaw 时角速度被除以 5，
+      # Go2 步态死区大约 0.1 rad/s，5 倍减速后直接踩不动 → "掉不过来"
+      # 2.0 倍减速在 max_vel_theta=1.0 下接近目标时仍有 0.5 rad/s 能力
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 2.0
       RotateToGoal.lookahead_time: -1.0
-      Oscillation.x_only_threshold: 0.05
+      # Oscillation: 原地旋转时 vx≈0，原来 threshold=0.05 会把正常旋转判为振荡
+      # 抬到 0.10 让 DWB 在低 vx 时不惩罚旋转轨迹
+      Oscillation.x_only_threshold: 0.10
 
 local_costmap:
   local_costmap:

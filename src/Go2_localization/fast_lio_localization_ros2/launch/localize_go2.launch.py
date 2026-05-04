@@ -63,7 +63,7 @@ def generate_launch_description():
             'map_voxel_size': 0.40,
             'scan_voxel_size': 0.25,
             'fov': 6.28,
-            'freq_localization': 1.5,
+            'freq_localization': 2.0,
             'fov_far': 10.0,
             # MSE 阈值：与原始默认值保持一致，过小会导致有效匹配被拒绝
             'localization_th': 0.10,
@@ -90,11 +90,10 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # 平移矫正快（0.3s），旋转矫正也要在执行层暂停窗口内基本收敛。
-            # 低频 ICP 只修 map->odom，但 DWB 跟随的全局路径仍会随 map->odom 变化；
-            # 若 yaw 矫正拖太久，机器狗会边走边追一个正在转动的路径。
+            # 平移矫正 0.3s 快速响应，yaw 矫正延长至 1.2s（约2个ICP周期）
+            # 避免 yaw 还未收敛下一次 ICP 就到来导致持续抖动
             'correction_time_constant_xy': 0.3,
-            'correction_time_constant_yaw': 0.6,
+            'correction_time_constant_yaw': 1.2,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

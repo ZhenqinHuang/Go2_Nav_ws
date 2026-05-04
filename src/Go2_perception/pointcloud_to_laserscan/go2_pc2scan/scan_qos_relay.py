@@ -36,7 +36,7 @@ class ScanQosRelay(Node):
 
         self._pub = self.create_publisher(LaserScan, output_topic, best_effort_qos)
         self._sub = self.create_subscription(
-            LaserScan, input_topic, self._cb, reliable_qos
+            LaserScan, input_topic, self._cb, best_effort_qos
         )
         self.get_logger().info(
             f'scan_qos_relay: {input_topic} (RELIABLE) -> {output_topic} (BEST_EFFORT)'

@@ -1,7 +1,9 @@
 planner_server:
   ros__parameters:
     use_sim_time: False
-    expected_planner_frequency: 2.0
+    # 提到 4Hz：动态环境（人走过、家具移动）下全局路径每 0.25s 更新一次
+    # NavFn 在 35m×32m 地图 0.05m 分辨率下单次 ~30-50ms，4Hz CPU 占用约 8%
+    expected_planner_frequency: 4.0
     planner_plugins: ["GridBased"]
 
     GridBased:
@@ -20,7 +22,8 @@ global_costmap:
       use_sim_time: False
       global_frame: map
       robot_base_frame: base_link
-      update_frequency: 3.0
+      # planner 提到 4Hz 后 costmap 也要跟上，否则 planner 跑了等于白跑
+      update_frequency: 5.0
       publish_frequency: 2.0
       # 与 local_costmap 保持一致，覆盖 Go2 转弯时的扫掠半径
       robot_radius: 0.25
@@ -41,11 +44,11 @@ global_costmap:
           data_type: "LaserScan"
           clearing: True
           marking: True
-      # 全局层加膨胀，让 NavFn 一开始就把路径推离墙角，避免 DWB 被拉着擦墙
+      # 全局层膨胀与 local 保持一致；过大会让 NavFn 在窄/中等通道找不到路径
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.45
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.30
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:

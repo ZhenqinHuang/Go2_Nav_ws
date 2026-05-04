@@ -12,7 +12,8 @@ go2_cmd_vel_bridge:
     motion_deadband: 0.03
 
     # cmd_vel 超时：超过此时间未收到新指令则停止运动
-    cmd_timeout_sec: 0.35
+    # controller 偶尔抖动到 4-5Hz 时，0.35s 会被频繁触发导致一卡一卡，放宽到 0.6s
+    cmd_timeout_sec: 0.6
 
     # 控制循环频率（Hz），建议与 controller_frequency 相近或更高
     publish_rate_hz: 50.0
@@ -29,13 +30,13 @@ go2_cmd_vel_bridge:
     localization_topic: "/map_to_odom"
     # /map_to_odom 目标 1.5 Hz；超过约两个周期未更新就暂停执行层。
     localization_timeout_sec: 1.5
-    # 检测到较明显的重定位修正后，暂停一小段时间等待 map->odom 平滑收敛
-    # pause 时间应覆盖 transform_fusion 的大部分平滑过程，避免机器狗边走边追随
-    # 正在变化的 map->odom。yaw tau=0.6s 时，1.2s 约完成 86% 矫正。
-    correction_pause_sec: 1.2
-    correction_pause_delta_xy: 0.12
-    correction_pause_delta_yaw: 0.15
+    # ICP max_delta 放宽到 0.8m/1.05rad 后，正常修正幅度会更大
+    # 暂停阈值设在 max_delta 的 60-70%，只在大堂等开阔场景的大幅锁回时触发
+    # pause_sec 给 transform_fusion 的 yaw 平滑常数 (1.0s) 留时间收敛
+    correction_pause_sec: 0.8
+    correction_pause_delta_xy: 0.50
+    correction_pause_delta_yaw: 0.70
 
     # 角速度 EMA 新指令权重（1=无平滑，越小越平滑但越滞后）
-    # 默认 0.85 较接近原始指令；0.65 稍强平滑，降低帧间角速度跳变
-    vyaw_smooth_alpha: 0.65
+    # 0.65 在环岛连续转弯时会让角速度爬升过慢、显得犹豫；0.85 更跟手
+    vyaw_smooth_alpha: 0.85

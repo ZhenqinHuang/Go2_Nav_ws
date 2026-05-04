@@ -3,7 +3,7 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -16,8 +16,17 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_rviz = LaunchConfiguration("use_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
+    controller = LaunchConfiguration("controller")
 
     sim_time_param = {"use_sim_time": use_sim_time}
+
+    # 根据 controller launch arg 选择 controller_server.yaml (DWB) 或
+    # controller_server_rpp.yaml (Regulated Pure Pursuit)
+    controller_yaml = PythonExpression([
+        "'", os.path.join(config_dir, "controller_server_rpp.yaml"), "' if '",
+        controller, "' == 'rpp' else '",
+        os.path.join(config_dir, "controller_server.yaml"), "'"
+    ])
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -26,6 +35,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
+        DeclareLaunchArgument(
+            "controller",
+            default_value="dwb",
+            description="Local controller: 'dwb' (default, verified working) or 'rpp' (Regulated Pure Pursuit, experimental)",
+        ),
         DeclareLaunchArgument(
             "rviz_config",
             default_value=os.path.join(pkg_share, "rviz", "nav2.rviz"),
@@ -62,7 +76,7 @@ def generate_launch_description():
             name="controller_server",
             output="screen",
             parameters=[
-                os.path.join(config_dir, "controller_server.yaml"),
+                controller_yaml,
                 sim_time_param,
             ],
         ),

@@ -22,6 +22,8 @@ UNITREE_ROS2_WS="${UNITREE_ROS2_WS:-${HOME}/unitree_ros2}"
 MAP_YAML="${MAP_YAML:-}"
 USE_RVIZ="${USE_RVIZ:-false}"
 USE_SIM_TIME="${USE_SIM_TIME:-false}"
+# 本地控制器：dwb (默认，Go2 实测可用) 或 rpp (Regulated Pure Pursuit)
+CONTROLLER="${CONTROLLER:-dwb}"
 
 usage() {
   echo "用法: MAP_YAML=/path/to/maps.yaml bash $(basename "$0")"
@@ -95,10 +97,11 @@ CMD_VEL_BRIDGE_PID=$!
 echo "[go2_nav2] cmd_vel bridge PID=${CMD_VEL_BRIDGE_PID}，日志: /tmp/go2_cmd_vel_bridge.log"
 
 echo "[go2_nav2] 启动 Nav2 决策层"
-echo "[go2_nav2] map=${MAP_YAML}  use_sim_time=${USE_SIM_TIME}  use_rviz=${USE_RVIZ}"
+echo "[go2_nav2] map=${MAP_YAML}  use_sim_time=${USE_SIM_TIME}  use_rviz=${USE_RVIZ}  controller=${CONTROLLER}"
 
 exec ros2 launch go2_nav2 nav2_bringup.launch.py \
   "map:=${MAP_YAML}" \
   "use_sim_time:=${USE_SIM_TIME}" \
-  "use_rviz:=${USE_RVIZ}"
+  "use_rviz:=${USE_RVIZ}" \
+  "controller:=${CONTROLLER}"
 

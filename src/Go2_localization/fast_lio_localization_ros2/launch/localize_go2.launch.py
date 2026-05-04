@@ -54,21 +54,22 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # Orin NX 16GB：CPU 核心弱，ICP 耗时是瓶颈
-            # map_voxel_size 0.40：地图点数再减 ~30%，法线估计和 submap 裁剪都更快
-            # scan_voxel_size 0.25：扫描点降采样同步加大，保持 scan/map 点密度比例一致
-            # fov_far 10.0：从 12m 缩到 10m，submap 点数减少约 30%，是最直接的提速手段
-            # freq_localization 1.5：Orin NX 跑完一次两阶段 ICP 约需 400~600ms，
-            # 设 2.0 Hz 时 sleep 几乎为 0，实际频率反而不稳定；1.5 Hz 留出余量更可靠
+            # Orin NX 16GB 8 核充裕；优先保证大堂等开阔场景能稳定锁回
+            # fov_far 10m：覆盖整个店铺对角线，大堂里也能看到远墙作为约束
+            # （之前为省 CPU 调到 8m，导致大堂偶发失锁）
             'map_voxel_size': 0.40,
             'scan_voxel_size': 0.25,
             'fov': 6.28,
-            'freq_localization': 2.0,
+            # ICP 单次约 250-380ms，2.5Hz (周期 400ms) CPU 余量充足
+            'freq_localization': 2.5,
             'fov_far': 10.0,
-            # MSE 阈值：与原始默认值保持一致，过小会导致有效匹配被拒绝
+            # MSE 阈值 0.10：保留默认值
+            # 大堂特征稀疏时正常 MSE 会高于 0.07，收紧会让有效匹配被持续拒绝
             'localization_th': 0.10,
-            # 单次最大矫正量：超出则拒绝，防止异常跳变（初始定位不受限）
-            # 放宽 yaw 限制：0.52rad(30°) 太小，机器狗走歪后 ICP 结果会被持续拒绝导致无法收敛
+            # 单次最大修正量 0.8m/1.05rad（约 30°）：宽松值
+            # 大堂积累的漂移可能超过 0.4m，收紧反而让该修正的不修正
+            # 偶发的大跳变由 transform_fusion 平滑常数吸收
+            # 注意：初始定位走另一路径（initialpose），不受这两个限制
             'max_delta_xy': 0.8,
             'max_delta_yaw_rad': 1.05,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
@@ -90,10 +91,10 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # 平移矫正 0.3s 快速响应，yaw 矫正延长至 1.2s（约2个ICP周期）
-            # 避免 yaw 还未收敛下一次 ICP 就到来导致持续抖动
+            # ICP 修正幅度回到 0.8m/1.05rad 后，单次修正可能较大
+            # 平移 0.3s 快速响应；yaw 1.0s 平滑大幅修正避免机器狗被"拽着转"
             'correction_time_constant_xy': 0.3,
-            'correction_time_constant_yaw': 1.2,
+            'correction_time_constant_yaw': 1.0,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

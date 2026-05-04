@@ -1,7 +1,9 @@
 controller_server:
   ros__parameters:
     use_sim_time: False
-    controller_frequency: 10.0
+    # 20Hz 是 Orin NX 单核性能下 DWB 能稳跑的甜区
+    # 25Hz 实测会触发 "Control loop missed its desired rate" → 实际反而更慢
+    controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.0
     min_theta_velocity_threshold: 0.001
@@ -18,8 +20,13 @@ controller_server:
 
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.15
+      # 0.15m 对四足太严：FAST-LIO 重定位 + Go2 步态有 ±10cm 抖动，
+      # 加上 map->odom 平滑过程，机器狗实际会在目标周围 ±10cm 飘，
+      # 15cm 容差经常进了又出 → 反复发新路径
+      xy_goal_tolerance: 0.25
+      # 0.15rad (8.6°) 对四足也偏严：Go2 站立时身体本身有 ±3-5° 摇摆，
+      # 加 IMU 漂移很难精确停住 → 反复"摆头"。0.35rad (~20°) 实用足够
+      yaw_goal_tolerance: 0.35
       stateful: True
 
     FollowPath:
@@ -39,14 +46,18 @@ controller_server:
       decel_lim_y: 0.0
       acc_lim_theta: 1.5
       decel_lim_theta: -1.5
+      # 采样密度：DWB 单次评估 vx_samples × vtheta_samples 条轨迹
+      # 20×24=480 条在 Orin NX 单核 20Hz 下能稳跑（25×30=750 会爆）
       vx_samples: 20
       vy_samples: 1
-      vtheta_samples: 20
-      sim_time: 2.0
+      vtheta_samples: 24
+      # 1.6s 前瞻：0.35m/s × 1.6s = 0.56m，足够弯道预判，又不会让评分太重
+      sim_time: 1.6
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.8
-      xy_goal_tolerance: 0.15
+      # 与外层 goal_checker 保持一致；DWB 用这个判断何时切换到 RotateToGoal 阶段
+      xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.10
       short_circuit_trajectory_evaluation: True
       stateful: True
@@ -81,11 +92,14 @@ local_costmap:
       use_sim_time: False
       global_frame: odom
       robot_base_frame: base_link
-      update_frequency: 7.0
-      publish_frequency: 4.0
+      # costmap 频率必须 ≥ controller_frequency，否则 DWB 永远拿到滞后的代价图
+      update_frequency: 18.0
+      publish_frequency: 5.0
       rolling_window: True
-      width: 4
-      height: 4
+      # 5x5m rolling window：折中值。机器狗在中心，前后左右各 2.5m 覆盖
+      # 比 4m 多 25% 边距用于弯道预判，比 6m 评分快约 30%
+      width: 5
+      height: 5
       resolution: 0.05
       # Go2 实际外形约 0.70m x 0.31m，按外接圆估到 0.25m，给转弯时车身扫掠留余量
       robot_radius: 0.25
@@ -102,9 +116,13 @@ local_costmap:
           data_type: "LaserScan"
           raytrace_max_range: 3.0
           obstacle_max_range: 2.5
-      # 较平缓的衰减 + 较大的膨胀半径，让墙角周围形成宽阔的渐变高代价区
-      # 这样 DWB 评分时会主动远离墙角，而不是擦着过
+      # 膨胀参数权衡：
+      # - 太大 → 窄/中等通道里机器狗整个泡在高代价区，DWB 评分认为"无路可走"
+      # - 太小 → 转弯擦墙角
+      # Go2 半径 0.25m，机器狗中心到墙最近距离至少 0.30m 才不至于擦
+      # 0.30m 膨胀 + 较陡的衰减 (3.0) → 高代价集中在墙边 0.10m 内，
+      # 通道中央代价为 0，DWB 自由发挥
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.45
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.30

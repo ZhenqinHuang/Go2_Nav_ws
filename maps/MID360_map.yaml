@@ -1,8 +1,6 @@
 image: /home/unitree/Go2_Nav_ws/maps/MID360_map.pgm
 resolution: 0.05
-origin: [-4.02971, -26.5424, 0.0]
+origin: [-10.8392, -7.31706, 0.0]
 negate: 0
-# 0.65 → 0.75：让深灰色边缘像素从"占据"降级为"未知/自由"，相当于把墙削薄
-# 1~2 个像素（5~10cm），消除 GIMP 后处理留下的黑色毛刺
-occupied_thresh: 0.75
+occupied_thresh: 0.65
 free_thresh: 0.196

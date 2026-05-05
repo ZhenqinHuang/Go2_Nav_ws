@@ -7,6 +7,7 @@ nav_tts_announcer.py
 import time
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 from rcl_interfaces.msg import Log
 from std_msgs.msg import String
 
@@ -22,7 +23,14 @@ class NavTtsAnnouncer(Node):
         tts_topic = self.get_parameter('tts_topic').value
 
         self._tts_pub = self.create_publisher(String, tts_topic, 10)
-        self.create_subscription(Log, '/rosout', self._rosout_cb, 50)
+
+        # /rosout 发布者使用 TRANSIENT_LOCAL，订阅侧必须匹配否则 ROS 2 Foxy 下消息全部丢弃
+        rosout_qos = QoSProfile(
+            depth=50,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(Log, '/rosout', self._rosout_cb, rosout_qos)
 
         self._last_announce_time = 0.0
 

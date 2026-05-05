@@ -219,7 +219,7 @@ print_status() {
     echo -e "\n${BOLD}话题频率抽检，Ctrl+C 可中断:${NC}"
     for topic in /livox/lidar /Odometry /odom /map_to_odom /scan; do
         if ros2 topic list 2>/dev/null | grep -Fxq "${topic}"; then
-            timeout 4s ros2 topic hz "${topic}" 2>/dev/null | sed "s/^/[${topic}] /" || true
+            timeout 4s ros2 topic hz "${topic}" 2>/dev/null | sed "s|^|[${topic}] |" || true
         else
             warn "缺少话题: ${topic}"
         fi
@@ -233,6 +233,9 @@ main() {
     log "FASTLIO_LOC_PCD=${FASTLIO_LOC_PCD}"
 
     source_if_exists "${ROS_SETUP}" "ROS 2"
+    # Unitree 专用环境：设置 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp 和 CYCLONEDDS_URI
+    source_if_exists "${HOME}/unitree_ros2/install/setup.bash" "unitree_ros2 工作空间"
+    source_if_exists "${HOME}/unitree_ros2/setup.sh" "Unitree ROS2 DDS 环境"
     source_if_exists "${LIVOX_WS}/install/setup.bash" "Livox 工作空间"
     source_if_exists "${FASTLIO_WS}/install/setup.bash" "FAST-LIO2 工作空间"
     source_if_exists "${GO2_NAV_WS}/install/setup.bash" "Go2_Nav 工作空间"
@@ -252,7 +255,6 @@ main() {
         "${LOG_DIR}/livox.log" \
         ros2 launch livox_ros_driver2 msg_MID360_launch.py
 
-    wait_for_node "/livox_lidar_publisher"
     wait_for_topic "/livox/lidar"
     wait_for_topic "/livox/imu"
 

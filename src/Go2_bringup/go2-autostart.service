@@ -1,0 +1,37 @@
+[Unit]
+Description=Go2 Navigation Full Stack (FastLIO + Nav2 + WebBridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=unitree
+Group=unitree
+WorkingDirectory=/home/unitree/Go2_Nav_ws
+
+# 地图路径：按实际修改
+Environment="MAP_YAML=/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml"
+# 跳过 colcon 重新构建（开机启动时已构建好）
+Environment="NAV2_SKIP_BUILD=1"
+# 不启动 RViz（无显示器）
+Environment="USE_RVIZ=false"
+# Unitree DDS 环境（必须与手动终端一致，否则 ros2 topic list 看不到话题）
+Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+Environment="CYCLONEDDS_URI=<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"eth0\" multicast=\"default\"/></Interfaces></General></Domain></CycloneDDS>"
+
+ExecStart=/home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
+
+# 异常退出 60 秒后重启（留够时间让 cgroup 里所有子进程完全退出）
+Restart=on-failure
+RestartSec=60
+
+# 给子进程足够时间优雅退出
+TimeoutStopSec=60
+KillMode=control-group
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=go2-autostart
+
+[Install]
+WantedBy=multi-user.target

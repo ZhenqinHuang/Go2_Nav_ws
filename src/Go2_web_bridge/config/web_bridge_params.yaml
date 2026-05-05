@@ -2,7 +2,7 @@
 web_bridge_node:
   ros__parameters:
     # WebSocket 服务器地址（含鉴权 token 和 source_id）
-    server_url: "ws://121.40.212.85:30100/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001"
+    server_url: "wss://jqg.yihexiaozhong.com/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001"
 
     # 订阅话题
     odom_topic: "/odom"

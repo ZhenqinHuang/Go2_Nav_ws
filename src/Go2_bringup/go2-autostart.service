@@ -18,6 +18,11 @@ Environment="USE_RVIZ=false"
 # Unitree DDS 环境（必须与手动终端一致，否则 ros2 topic list 看不到话题）
 Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
 Environment="CYCLONEDDS_URI=<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"eth0\" multicast=\"default\"/></Interfaces></General></Domain></CycloneDDS>"
+# 无 PulseAudio 环境下让 ALSA 直接输出到 USB 音频设备
+Environment="ALSA_CARD=Device"
+# 让服务进程能连接到 unitree(uid=1000) 的 PulseAudio socket
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="PULSE_SERVER=unix:/run/user/1000/pulse/native"
 
 ExecStart=/home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 

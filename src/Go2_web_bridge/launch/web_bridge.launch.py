@@ -19,8 +19,8 @@ def generate_launch_description():
         description='音量调整，如 +50%',
     )
     tts_device_arg = DeclareLaunchArgument(
-        'tts_alsa_device', default_value='plughw:Device,0',
-        description='ALSA 输出设备，如 plughw:2,0',
+        'tts_alsa_device', default_value='plughw:GoUSBAudio,0',
+        description='ALSA 输出设备，如 plughw:GoUSBAudio,0',
     )
 
     server_url_arg = DeclareLaunchArgument(

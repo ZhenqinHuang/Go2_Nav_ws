@@ -40,10 +40,10 @@ class NavTtsAnnouncer(Node):
         )
 
     def _rosout_cb(self, msg: Log):
-        if msg.name != 'bt_navigator':
+        if not msg.name.endswith('bt_navigator'):
             return
 
-        if 'Goal succeeded' not in msg.msg:
+        if 'Navigation succeeded' not in msg.msg and 'Goal succeeded' not in msg.msg:
             return
 
         now = time.monotonic()

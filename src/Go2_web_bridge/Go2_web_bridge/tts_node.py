@@ -39,19 +39,27 @@ class TtsNode(Node):
     def __init__(self):
         super().__init__('tts_node')
 
-        self.declare_parameter('queue_size',  5)
-        self.declare_parameter('tts_topic',   '/tts_text')
-        self.declare_parameter('alsa_device', 'plughw:Device,0')
-        self.declare_parameter('voice',       'zh-CN-XiaoxiaoNeural')
-        self.declare_parameter('rate',        '+0%')
-        self.declare_parameter('volume',      '+0%')
+        self.declare_parameter('queue_size',      5)
+        self.declare_parameter('tts_topic',       '/tts_text')
+        self.declare_parameter('alsa_device',     'plughw:GoUSBAudio,0')
+        self.declare_parameter('alsa_card_index', '0')
+        self.declare_parameter('voice',           'zh-CN-XiaoxiaoNeural')
+        self.declare_parameter('rate',            '+0%')
+        self.declare_parameter('volume',          '+0%')
 
-        q_size         = self.get_parameter('queue_size').value
-        tts_topic      = self.get_parameter('tts_topic').value
-        self._device   = self.get_parameter('alsa_device').value
-        self._voice    = self.get_parameter('voice').value
-        self._rate     = self.get_parameter('rate').value
-        self._volume   = self.get_parameter('volume').value
+        q_size                = self.get_parameter('queue_size').value
+        tts_topic             = self.get_parameter('tts_topic').value
+        self._device          = self.get_parameter('alsa_device').value
+        self._alsa_card_index = self.get_parameter('alsa_card_index').value
+        self._voice           = self.get_parameter('voice').value
+        self._rate            = self.get_parameter('rate').value
+        self._volume          = self.get_parameter('volume').value
+
+        # 启动时将 USB 音频音量拉满，防止重启后静音
+        subprocess.run(
+            ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
+            capture_output=True,
+        )
 
         self.create_subscription(String, tts_topic, self._tts_cb, 10)
 
@@ -99,12 +107,18 @@ class TtsNode(Node):
         tmpfile = tempfile.mktemp(suffix='.mp3')
         try:
             asyncio.run(_synthesize(tmpfile))
-            # pasuspender 临时释放 PulseAudio 对 ALSA 设备的占用
+            # 播放前确保音量最大（防止重启后音量重置）
             subprocess.run(
-                ['pasuspender', '--',
-                 'mpg123', '-a', self._device, '-q', tmpfile],
-                stderr=subprocess.DEVNULL,
+                ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
+                capture_output=True,
             )
+            result = subprocess.run(
+                ['mpg123', '-a', self._device, '-q', tmpfile],
+                env={**os.environ, 'AUDIODEV': self._device},
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                cprint(_Y, f'[TTS] mpg123 失败(code={result.returncode}): {result.stderr.strip()}')
         except Exception as e:
             cprint(_Y, f'[TTS] 播报失败: {e}')
         finally:

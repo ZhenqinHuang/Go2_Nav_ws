@@ -193,6 +193,11 @@ main() {
     log "  WebSocket:  /tmp/go2_nav_bringup/web_bridge.log"
     log "════════════════════════════════════════════════"
 
+    # 等待 TTS 节点就绪后播报启动完成提示
+    sleep 5
+    ros2 topic pub --once /tts_text std_msgs/msg/String \
+        "data: '导航启动完毕，请你设置点位'" 2>/dev/null || true
+
     # 等待任意子进程退出时报警
     wait -n "${NAV_START_PID}" "${NAV2_PID}" "${WEB_PID}" 2>/dev/null || true
     err "某个子进程已意外退出，正在关闭所有服务..."

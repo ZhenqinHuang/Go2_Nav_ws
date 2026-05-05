@@ -56,10 +56,8 @@ class TtsNode(Node):
         self._volume          = self.get_parameter('volume').value
 
         # 启动时将 USB 音频音量拉满，防止重启后静音
-        subprocess.run(
-            ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
-            capture_output=True,
-        )
+        # 开机自启动时 USB 设备可能尚未就绪，重试最多 30 次（每次等 1s）
+        threading.Thread(target=self._init_volume, daemon=True).start()
 
         self.create_subscription(String, tts_topic, self._tts_cb, 10)
 
@@ -68,6 +66,20 @@ class TtsNode(Node):
         self._worker.start()
 
         cprint(_C, f'[TTS] 节点启动  话题={tts_topic}  声音={self._voice}  设备={self._device}')
+
+    def _init_volume(self):
+        """开机时 USB 音频可能尚未就绪，循环重试直到设置成功。"""
+        import time
+        for i in range(30):
+            r = subprocess.run(
+                ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
+                capture_output=True,
+            )
+            if r.returncode == 0:
+                cprint(_C, f'[TTS] 音量已拉满（第 {i+1} 次尝试）')
+                return
+            time.sleep(1)
+        cprint(_Y, '[TTS] 警告：音量初始化失败，USB 音频设备可能未就绪')
 
     def _tts_cb(self, msg: String):
         text = msg.data.strip()

@@ -17,7 +17,9 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
     cmd_vel_topic_ =
         this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
     max_vx_ = this->declare_parameter<double>("max_vx", 0.6);
-    max_vy_ = this->declare_parameter<double>("max_vy", 0.4);
+    // Go2 sport API 不支持横向移动，默认强制为 0；
+    // 即使 yaml 加载失败或参数名拼错，也不会让狗扭腰乱走
+    max_vy_ = this->declare_parameter<double>("max_vy", 0.0);
     max_vyaw_ = this->declare_parameter<double>("max_vyaw", 1.0);
     publish_rate_hz_ = this->declare_parameter<double>("publish_rate_hz", 50.0);
     cmd_timeout_sec_ = this->declare_parameter<double>("cmd_timeout_sec", 0.35);
@@ -244,7 +246,7 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
 
   std::string cmd_vel_topic_;
   double max_vx_{0.6};
-  double max_vy_{0.4};
+  double max_vy_{0.0};
   double max_vyaw_{1.0};
   double publish_rate_hz_{50.0};
   double cmd_timeout_sec_{0.35};

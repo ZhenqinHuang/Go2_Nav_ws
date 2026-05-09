@@ -25,8 +25,8 @@ global_costmap:
       # planner 提到 4Hz 后 costmap 也要跟上，否则 planner 跑了等于白跑
       update_frequency: 5.0
       publish_frequency: 2.0
-      # 与 local_costmap 保持一致，覆盖 Go2 转弯时的扫掠半径
-      robot_radius: 0.25
+      # 与 local_costmap 保持一致：矩形 footprint 让 NavFn 在窄通道也能找到路径
+      footprint: "[[0.35, 0.155], [0.35, -0.155], [-0.35, -0.155], [-0.35, 0.155]]"
       # transform_fusion C++ node uses current timestamps; keep this tight so
       # Nav2 does not continue planning against multi-second stale localization.
       transform_tolerance: 1.0

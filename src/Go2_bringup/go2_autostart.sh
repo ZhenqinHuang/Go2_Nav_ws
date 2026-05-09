@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Go2 一键启动脚本：传感器定位链路 + Nav2 + WebSocket 桥接
+# Go2 一键启动脚本：传感器定位链路 + Nav2 + WebSocket 桥接 + 局域网 Web UI
 #
 # 启动顺序:
-#   1. go2_nav_start.sh  — Livox + FastLIO + 定位 + scan 转换（后台）
-#   2. run_nav2.sh       — Nav2 决策层 + cmd_vel 桥接（后台，等待 /scan 就绪）
-#   3. run_web_bridge.sh — WebSocket 桥接（后台，等待 /navigate_to_pose 就绪）
+#   1. go2_nav_start.sh   — Livox + FastLIO + 定位 + scan 转换（后台）
+#   2. run_nav2.sh        — Nav2 决策层 + cmd_vel 桥接（后台，等待 /scan 就绪）
+#   3. run_web_bridge.sh  — 云端 WebSocket 桥接（后台，等待 /navigate_to_pose 就绪）
+#   4. run_robot_web.sh   — 局域网 Web 控制台（rosbridge + Vite，可选）
 #
 # 环境变量（所有子脚本的环境变量均可透传）:
 #   MAP_YAML            地图 yaml 路径（必填）
@@ -12,6 +13,8 @@
 #   SERVER_URL          WebSocket 服务器 URL（默认值见 run_web_bridge.sh）
 #   NAV2_SKIP_BUILD     设为 1 跳过 colcon build
 #   USE_RVIZ            是否启动 RViz（默认 false）
+#   USE_ROBOT_WEB       是否启动局域网 Web UI（默认 true，设 false 跳过）
+#   ROBOT_WEB_DIR       Web 前端目录（默认见 run_robot_web.sh）
 #
 # 用法:
 #   MAP_YAML=/path/to/maps.yaml bash go2_autostart.sh
@@ -184,19 +187,33 @@ main() {
     # 等待 Nav2 action 服务就绪
     wait_for_action "/navigate_to_pose" "${WAIT_TIMEOUT}"
 
-    # ── 阶段 3：WebSocket 桥接 ────────────────────────────────────────────────
-    log "[3/3] 启动 WebSocket 桥接（run_web_bridge.sh）..."
+    # ── 阶段 3：云端 WebSocket 桥接 ───────────────────────────────────────────
+    log "[3/4] 启动云端 WebSocket 桥接（run_web_bridge.sh）..."
     bash "${SCRIPT_DIR}/run_web_bridge.sh" &
     WEB_PID=$!
     CHILD_PIDS+=("${WEB_PID}")
     ok "run_web_bridge.sh 已在后台启动，PID=${WEB_PID}"
+
+    # ── 阶段 4：局域网 Web 控制台（rosbridge + Vite）────────────────────────
+    USE_ROBOT_WEB="${USE_ROBOT_WEB:-true}"
+    ROBOT_WEB_PID=""
+    if [[ "${USE_ROBOT_WEB,,}" == "true" || "${USE_ROBOT_WEB}" == "1" ]]; then
+        log "[4/4] 启动局域网 Web 控制台（run_robot_web.sh）..."
+        bash "${SCRIPT_DIR}/run_robot_web.sh" &
+        ROBOT_WEB_PID=$!
+        CHILD_PIDS+=("${ROBOT_WEB_PID}")
+        ok "run_robot_web.sh 已在后台启动，PID=${ROBOT_WEB_PID}"
+    else
+        log "[4/4] 跳过局域网 Web 控制台（USE_ROBOT_WEB=${USE_ROBOT_WEB}）"
+    fi
 
     echo ""
     log "════════════════════════════════════════════════"
     ok "所有服务已启动，按 Ctrl+C 停止全部进程"
     log "日志目录: /tmp/go2_nav_bringup/"
     log "  传感器链路: /tmp/go2_nav_bringup/livox.log, fast_lio.log, ..."
-    log "  WebSocket:  /tmp/go2_nav_bringup/web_bridge.log"
+    log "  云 WebSocket:  /tmp/go2_nav_bringup/web_bridge.log"
+    log "  局域网 Web:    /tmp/go2_nav_bringup/rosbridge.log, robot_web.log"
     log "════════════════════════════════════════════════"
 
     # 等待 /tts_text 话题就绪后播报启动完成（最多等 60s）
@@ -217,7 +234,8 @@ main() {
     # 等待子进程，任意一个退出则报警并清理
     local exit_pid
     while true; do
-        for pid in "${NAV_START_PID}" "${NAV2_PID}" "${WEB_PID}"; do
+        for pid in "${NAV_START_PID}" "${NAV2_PID}" "${WEB_PID}" "${ROBOT_WEB_PID}"; do
+            [[ -z "${pid}" ]] && continue
             if ! kill -0 "${pid}" 2>/dev/null; then
                 exit_pid="${pid}"
                 break 2

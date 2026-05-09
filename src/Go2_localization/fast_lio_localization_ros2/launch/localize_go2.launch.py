@@ -60,17 +60,23 @@ def generate_launch_description():
             'map_voxel_size': 0.40,
             'scan_voxel_size': 0.25,
             'fov': 6.28,
-            # ICP 单次约 250-380ms，2.5Hz (周期 400ms) CPU 余量充足
-            'freq_localization': 2.5,
+            # ICP 单次约 250-380ms。提到 3.5Hz（周期 285ms）让漂移累积窗口缩小 30%
+            # CPU 单核 37% → ~52%，总 CPU 占用 +2-3%（实测仍有余量）
+            'freq_localization': 3.5,
             'fov_far': 10.0,
             # MSE 阈值 0.10：保留默认值
             # 大堂特征稀疏时正常 MSE 会高于 0.07，收紧会让有效匹配被持续拒绝
             'localization_th': 0.10,
-            # 单次最大修正量 0.8m/1.05rad（约 30°）：宽松值
-            # 大堂积累的漂移可能超过 0.4m，收紧反而让该修正的不修正
+            # 单次最大修正量限制：防止 ICP 误匹配引发瞬移
+            # 实测 FastLIO 长时间运行后漂移可达 1.2-1.9m（log:
+            # "Correction rejected (dt_xy=1.886m > 0.800)"），原 0.8 阈值
+            # 把所有真正的修正都拒了 → 重定位"后期精度差"
+            # 抬到 2.0m：足以覆盖正常漂移；MSE 0.029-0.041 << 0.10 阈值
+            # 表明 ICP 匹配质量极佳，误匹配风险低
+            # yaw 修正实测 < 0.05rad，1.05 阈值富余很大，保持
             # 偶发的大跳变由 transform_fusion 平滑常数吸收
             # 注意：初始定位走另一路径（initialpose），不受这两个限制
-            'max_delta_xy': 0.8,
+            'max_delta_xy': 2.0,
             'max_delta_yaw_rad': 1.05,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]

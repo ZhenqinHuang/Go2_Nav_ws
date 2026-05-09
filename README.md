@@ -1,6 +1,6 @@
 # Go2 Nav Workspace
 
-宇树 Go2 机器狗自主导航项目。在 Jetson Orin NX 16GB 上，使用 Livox MID360 + FAST-LIO2 + fast_lio_localization_ros2 为 Nav2 提供完整的感知与定位数据流。
+宇树 Go2 机器狗完整自主导航项目。在 Jetson Orin NX 16GB 上，使用 Livox MID360 + FAST-LIO2 + fast_lio_localization_ros2 为 Nav2 提供完整的感知与定位数据流，并通过局域网 Web 控制台和云端 WebSocket 桥接实现远程任务下发。
 
 | 项目 | 内容 |
 |---|---|
@@ -11,7 +11,8 @@
 | ROS 版本 | ROS 2 Foxy |
 | 里程计 | FAST-LIO2（LiDAR-IMU 紧耦合） |
 | 重定位 | fast_lio_localization_ros2（ICP 点云匹配） |
-| 导航框架 | Nav2 |
+| 导航框架 | Nav2（DWB 局部控制器） |
+| 交互界面 | 局域网 Web 控制台 + 云端 WebSocket 桥接 |
 
 ---
 
@@ -34,6 +35,28 @@ MID360 LiDAR + IMU
         └─ /cloud_registered_body ─────> go2_pc2scan
                                         ├─ cloud_filter_node → /cloud_filtered
                                         └─ pointcloud_to_laserscan → /scan
+
+/odom + /scan + map→odom TF
+        │
+     Nav2 (go2_nav2)
+        ├─ map_server      → /map（2D 占据栅格地图）
+        ├─ planner_server  → 全局路径规划（NavFn）
+        ├─ controller_server → 局部控制（DWB）→ /cmd_vel
+        ├─ recoveries_server → 恢复行为（Spin/BackUp/Wait）
+        └─ bt_navigator    → 行为树决策
+                │
+        go2_cmd_vel_bridge
+                │
+        Go2 Sport API（机体运动控制）
+
+/odom + /localization + /navigate_to_pose/_action/status
+        │
+   Go2_web_bridge
+        ├─ web_bridge_node  → 云端 WebSocket（上行位姿/导航状态，下行目标点/TTS）
+        ├─ tts_node         → 中文 TTS 语音播报
+        └─ rosbridge_websocket → 局域网 WebSocket（浏览器 Web UI）
+                │
+        Vite Web 控制台 (http://<机器狗IP>:5173)
 ```
 
 ## TF 树
@@ -71,6 +94,8 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 | `map → odom` | TF | 100 Hz | — | transform_fusion |
 | `/localization` | `nav_msgs/Odometry` | 100 Hz | RELIABLE | transform_fusion |
 | `/scan` | `sensor_msgs/LaserScan` | 10 Hz | RELIABLE | go2_pc2scan |
+| `/map` | `nav_msgs/OccupancyGrid` | latched | RELIABLE | map_server |
+| `/cmd_vel` | `geometry_msgs/Twist` | — | RELIABLE | controller_server |
 
 ---
 
@@ -78,11 +103,14 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 
 | 目录 | 说明 |
 |---|---|
-| `src/Go2_bringup` | 启动脚本：`go2_nav_start.sh`、`time_sync_start.sh`、`check_nav2_ready.sh` |
+| `src/Go2_bringup` | 启动脚本：`go2_autostart.sh`（全链路一键启动）、`go2_nav_start.sh`（定位链路）、`run_nav2.sh`（Nav2）、`run_robot_web.sh`（Web 控制台）、`run_web_bridge.sh`（云端桥接） |
 | `src/Go2_localization` | 定位模块：odom_tf_bridge + fast_lio_localization_ros2 |
 | `src/Go2_perception` | 感知模块：go2_pc2scan（点云过滤 + LaserScan 转换）、pcd_to_map（PCD → 2D 占据栅格地图） |
-| `src/Go2_time_sync` | 时间同步：PTP Master 向 MID360 提供精确时间 |
+| `src/Go2_nav2` | Nav2 导航模块：完整参数配置、DWB 局部控制器、自定义行为树、cmd_vel → Go2 Sport API 桥接、TTS 播报 |
+| `src/Go2_web_bridge` | 远程控制模块：云端 WebSocket 桥接 + 局域网 rosbridge |
+| `src/Go2_time_sync` | 时间同步：PTP Master 向 MID360 提供精确时间（当前未启用） |
 | `src/Go2_Slam` | 建图说明（FAST-LIO2 离线建图） |
+| `maps/` | 预构建地图文件（MID360_map.pgm + MID360_map.yaml） |
 
 ---
 
@@ -92,18 +120,17 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 
 ```bash
 # ROS 2 依赖
-sudo apt install ros-foxy-tf-transformations ros-foxy-pointcloud-to-laserscan
+sudo apt install ros-foxy-tf-transformations ros-foxy-pointcloud-to-laserscan \
+    ros-foxy-nav2-bringup ros-foxy-rosbridge-server
 
 # Python 依赖
-pip3 install open3d "numpy<2" pyyaml
+pip3 install open3d "numpy<2" pyyaml websockets edge-tts
 
-# PTP 时间同步
+# PTP 时间同步（可选）
 sudo apt install linuxptp ethtool
 ```
 
 ### 2. 编译
-
-`src/Go2_perception/LI_Init_calibration` 是 ROS1 catkin 包，已通过 `COLCON_IGNORE` 跳过，直接整仓编译即可：
 
 ```bash
 cd ~/Go2_Nav_ws
@@ -113,33 +140,40 @@ source install/setup.bash
 
 ### 3. 建图（首次使用）
 
-使用 FAST-LIO2 建图并保存 PCD 文件：
-
 ```bash
-# 在 FAST-LIO2 工作空间中启动建图
-ros2 launch fast_lio mapping.launch.py config_path:=... config_file:=mid360.yaml
+# 启动 Livox 驱动
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
 
-# 建图完成后保存地图（FAST-LIO2 会在 PCD 目录生成地图）
+# 启动 FAST-LIO2 建图
+ros2 launch fast_lio mapping.launch.py \
+  config_path:=~/ws_fastlio2/src/FAST_LIO_ROS2/config \
+  config_file:=mid360.yaml rviz:=true
+
+# 建图完成后保存地图
 cp /path/to/scans.pcd ~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd
+
+# 转换 2D 占据栅格地图
+ros2 launch pcd_to_map pcd_to_map.launch.py \
+  pcd_file:=~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd \
+  output_path:=~/Go2_Nav_ws/maps/MID360_map
 ```
 
-### 4. 启动导航前置链路
+### 4. 一键启动全链路（推荐）
 
 ```bash
-# 启动完整数据链路
-bash ~/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
+# 最简方式（使用默认地图路径）
+bash ~/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
+
+# 指定地图
+MAP_YAML=~/Go2_Nav_ws/maps/MID360_map.yaml \
+bash ~/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 ```
 
-自定义工作空间路径（实机 /home/unitree 环境）：
-
-```bash
-LIVOX_WS=/home/unitree/ws_Livox \
-FASTLIO_WS=/home/unitree/ws_fastlio2 \
-GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
-FASTLIO_CONFIG=/home/unitree/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml \
-FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd \
-bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_nav_start.sh
-```
+`go2_autostart.sh` 按顺序启动：
+1. 传感器定位链路（Livox → FAST-LIO2 → 定位 → 点云转换）
+2. Nav2 决策层（地图服务 + 路径规划 + 局部控制）
+3. 局域网 Web 控制台（rosbridge + Vite，默认开启）
+4. 云端 WebSocket 桥接（默认关闭，需 `USE_WEB_BRIDGE=true`）
 
 ### 5. 验证数据链路
 
@@ -159,11 +193,24 @@ ros2 topic hz /odom
 ros2 topic hz /scan
 ros2 topic hz /map_to_odom   # ICP 重定位，目标 1.5 Hz，建议 ≥ 1.0 Hz
 
-# 重定位位姿
-ros2 topic echo /localization --once
+# Nav2 Action 是否就绪
+ros2 action list | grep navigate_to_pose
 ```
 
-### 6. 触发重定位
+### 6. 发送导航目标
+
+**方式一：RViz2 点击目标点**（通过 RViz2 的 "Nav2 Goal" 按钮）
+
+**方式二：Web 控制台**（浏览器访问 `http://<机器狗IP>:5173`）
+
+**方式三：命令行**
+
+```bash
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 1.0, y: 0.5}, orientation: {w: 1.0}}}}"
+```
+
+### 7. 触发全局重定位
 
 向 `/initialpose` 发布初始位姿（与 RViz2 的 "2D Pose Estimate" 按钮兼容）：
 
@@ -174,18 +221,35 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 ---
 
-## 已完成
+## 环境变量总览
 
-- MID360 + FAST-LIO2 SLAM 建图流程
-- `odom_tf_bridge`：`/Odometry` (camera_init→body) → `/odom` (odom→base_link) + TF 广播
-- `fast_lio_localization_ros2`：PCD 地图 ICP 重定位，发布 `map→odom` TF
-- `go2_pc2scan`：点云高度过滤 + LaserScan 转换
-- `pcd_to_map`：PCD 点云 → 2D 占据栅格地图（`.pgm` + `.yaml`），供 Nav2 map_server 使用
-- `go2_nav_start.sh`：一键有序启动全链路
-- `check_nav2_ready.sh`：Nav2 前置链路完整性检查
-- `Go2_time_sync`：PTP 时间同步（MID360 ↔ 主机）
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MAP_YAML` | `~/Go2_Nav_ws/maps/MID360_map.yaml` | Nav2 地图文件路径 |
+| `LIVOX_WS` | `~/ws_Livox` | Livox 驱动工作空间 |
+| `FASTLIO_WS` | `~/ws_fastlio2` | FAST-LIO2 工作空间 |
+| `FASTLIO_LOC_PCD` | `Go2_localization/PCD/MID360_localization_filtered.pcd` | 定位用 PCD 文件 |
+| `USE_WEB_BRIDGE` | `false` | 是否启用云端 WebSocket 桥接 |
+| `USE_ROBOT_WEB` | `true` | 是否启动局域网 Web 控制台 |
+| `SERVER_URL` | `ws://121.40.212.85:30100/...` | 云端 WebSocket 服务器地址 |
+| `RVIZ` | `false` | 是否同步启动 RViz2 |
+| `WAIT_TIMEOUT` | `60` | 每步等待超时时间（秒） |
+| `CONTROLLER` | `dwb` | Nav2 局部控制器（`dwb` 或 `rpp`） |
 
-## 待完成
+---
 
-- Nav2 完整配置（costmap、行为树、路径规划参数文件）
-- Nav2 启动脚本 `nav2_start.sh`
+## 已完成功能
+
+- [x] MID360 + FAST-LIO2 SLAM 建图流程
+- [x] `odom_tf_bridge`：FAST-LIO2 `/Odometry` → `/odom` + `odom→base_link` TF
+- [x] `fast_lio_localization_ros2`：PCD 地图 ICP 重定位，发布 `map→odom` TF
+- [x] `go2_pc2scan`：点云高度过滤 + LaserScan 转换
+- [x] `pcd_to_map`：PCD → 2D 占据栅格地图（`.pgm` + `.yaml`）
+- [x] `go2_nav2`：完整 Nav2 配置（DWB 控制器 + 自定义行为树 + 代价地图）
+- [x] `go2_cmd_vel_bridge`：Nav2 `/cmd_vel` → Go2 Sport API 桥接
+- [x] `nav_tts_announcer`：导航完成 TTS 语音播报
+- [x] `go2_autostart.sh`：全链路一键启动（定位 + Nav2 + Web UI）
+- [x] `check_nav2_ready.sh`：Nav2 前置链路完整性检查
+- [x] `Go2_web_bridge`：云端 WebSocket 桥接（位姿上报 + 目标点下发）
+- [x] 局域网 Web 控制台（rosbridge + Vite 前端）
+- [x] `Go2_time_sync`：PTP 时间同步工具（当前未启用）

@@ -35,7 +35,9 @@ warn() { echo -e "${YELLOW}[WARN $(date '+%H:%M:%S')] [AUTOSTART]${NC} $*"; }
 err()  { echo -e "${RED}[ERR  $(date '+%H:%M:%S')] [AUTOSTART]${NC} $*" >&2; }
 
 # ── 参数校验 ─────────────────────────────────────────────────────────────────
-MAP_YAML="${MAP_YAML:-}"
+# 默认值：直接 bash go2_autostart.sh 即可，不用每次前面加 MAP_YAML=...
+# 需要换地图时仍可通过环境变量覆盖：MAP_YAML=/path/to/other.yaml bash go2_autostart.sh
+MAP_YAML="${MAP_YAML:-/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml}"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "用法: MAP_YAML=/path/to/maps.yaml bash $(basename "$0")"
@@ -44,7 +46,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "  MAP_YAML            地图 yaml 路径（必填）"
     echo "  FASTLIO_LOC_PCD     定位地图 PCD 路径"
     echo "  SERVER_URL          WebSocket 服务器 URL"
-    echo "  NAV2_SKIP_BUILD     设为 1 跳过 colcon build（默认 0）"
+    echo "  NAV2_SKIP_BUILD     设为 1 跳过 colcon build（默认 1）"
     echo "  USE_RVIZ            启动 RViz（默认 false）"
     echo "  WAIT_TIMEOUT        节点/话题等待超时秒数（默认 60）"
     exit 0
@@ -66,26 +68,30 @@ CHILD_PIDS=()
 cleanup() {
     echo ""
     log "收到退出信号，停止所有子进程..."
-    for pid in "${CHILD_PIDS[@]}"; do
-        if kill -0 "${pid}" 2>/dev/null; then
-            kill -TERM "${pid}" 2>/dev/null || true
-        fi
+    # 先发 SIGTERM，再等待
+    for pid in "${CHILD_PIDS[@]:-}"; do
+        [[ -z "${pid}" ]] && continue
+        kill -TERM "${pid}" 2>/dev/null || true
     done
 
-    local deadline=$(( $(date +%s) + 8 ))
+    local deadline=$(( $(date +%s) + 10 ))
     while (( $(date +%s) < deadline )); do
         local alive=0
-        for pid in "${CHILD_PIDS[@]}"; do
+        for pid in "${CHILD_PIDS[@]:-}"; do
+            [[ -z "${pid}" ]] && continue
             kill -0 "${pid}" 2>/dev/null && alive=1 && break
         done
         (( alive == 0 )) && break
         sleep 0.5
     done
 
-    for pid in "${CHILD_PIDS[@]}"; do
+    # 超时后强制 SIGKILL
+    for pid in "${CHILD_PIDS[@]:-}"; do
+        [[ -z "${pid}" ]] && continue
         kill -9 "${pid}" 2>/dev/null || true
     done
 
+    wait 2>/dev/null || true
     log "所有子进程已停止"
 }
 trap cleanup INT TERM EXIT
@@ -193,14 +199,33 @@ main() {
     log "  WebSocket:  /tmp/go2_nav_bringup/web_bridge.log"
     log "════════════════════════════════════════════════"
 
-    # 等待 TTS 节点就绪后播报启动完成提示
-    sleep 5
-    ros2 topic pub --once /tts_text std_msgs/msg/String \
-        "data: '导航启动完毕，请你设置点位'" 2>/dev/null || true
+    # 等待 /tts_text 话题就绪后播报启动完成（最多等 60s）
+    # 话题出现后再等 5s，让 tts_node 的 DDS 订阅关系完全建立，避免消息丢失
+    local tts_deadline=$(( $(date +%s) + 60 ))
+    while (( $(date +%s) < tts_deadline )); do
+        if ros2 topic list 2>/dev/null | grep -Fxq "/tts_text"; then
+            log "检测到 /tts_text，等待订阅者就绪..."
+            sleep 5
+            ros2 topic pub --once /tts_text std_msgs/msg/String \
+                "{data: '导航系统已经启动'}" 2>/dev/null || true
+            ok "TTS 播报已发送"
+            break
+        fi
+        sleep 2
+    done
 
-    # 等待任意子进程退出时报警
-    wait -n "${NAV_START_PID}" "${NAV2_PID}" "${WEB_PID}" 2>/dev/null || true
-    err "某个子进程已意外退出，正在关闭所有服务..."
+    # 等待子进程，任意一个退出则报警并清理
+    local exit_pid
+    while true; do
+        for pid in "${NAV_START_PID}" "${NAV2_PID}" "${WEB_PID}"; do
+            if ! kill -0 "${pid}" 2>/dev/null; then
+                exit_pid="${pid}"
+                break 2
+            fi
+        done
+        sleep 2
+    done
+    err "子进程 PID=${exit_pid} 已意外退出，正在关闭所有服务..."
 }
 
 main "$@"

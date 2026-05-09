@@ -41,7 +41,7 @@ class TtsNode(Node):
 
         self.declare_parameter('queue_size',      5)
         self.declare_parameter('tts_topic',       '/tts_text')
-        self.declare_parameter('alsa_device',     'plughw:GoUSBAudio,0')
+        self.declare_parameter('alsa_device',     'plughw:Device,0')
         self.declare_parameter('alsa_card_index', '0')
         self.declare_parameter('voice',           'zh-CN-XiaoxiaoNeural')
         self.declare_parameter('rate',            '+0%')
@@ -68,16 +68,48 @@ class TtsNode(Node):
         cprint(_C, f'[TTS] 节点启动  话题={tts_topic}  声音={self._voice}  设备={self._device}')
 
     def _init_volume(self):
-        """开机时 USB 音频可能尚未就绪，循环重试直到设置成功。"""
+        """开机时 USB 音频可能尚未就绪，循环重试直到设置成功。
+        USB 声卡 PCM Playback Volume 范围是整数 0-37，不支持百分比，用 cset numid 设置。
+        """
         import time
         for i in range(30):
-            r = subprocess.run(
-                ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
-                capture_output=True,
+            # 先查出 PCM Playback Volume 的 numid
+            r_info = subprocess.run(
+                ['amixer', '-c', self._alsa_card_index, 'controls'],
+                capture_output=True, text=True,
             )
-            if r.returncode == 0:
-                cprint(_C, f'[TTS] 音量已拉满（第 {i+1} 次尝试）')
-                return
+            numid = None
+            for line in r_info.stdout.splitlines():
+                if 'PCM Playback Volume' in line:
+                    # 格式: numid=3,iface=MIXER,name='PCM Playback Volume'
+                    try:
+                        numid = line.split(',')[0].split('=')[1]
+                    except IndexError:
+                        pass
+                    break
+
+            if numid:
+                # 获取最大值后设置
+                r_max = subprocess.run(
+                    ['amixer', '-c', self._alsa_card_index, 'cget', f'numid={numid}'],
+                    capture_output=True, text=True,
+                )
+                max_val = 37  # 默认值
+                for line in r_max.stdout.splitlines():
+                    if 'max=' in line:
+                        try:
+                            max_val = int(line.split('max=')[1].split(',')[0])
+                        except (ValueError, IndexError):
+                            pass
+                        break
+                r = subprocess.run(
+                    ['amixer', '-c', self._alsa_card_index, 'cset', f'numid={numid}',
+                     f'{max_val},{max_val}'],
+                    capture_output=True,
+                )
+                if r.returncode == 0:
+                    cprint(_C, f'[TTS] 音量已拉满 numid={numid} val={max_val}（第 {i+1} 次尝试）')
+                    return
             time.sleep(1)
         cprint(_Y, '[TTS] 警告：音量初始化失败，USB 音频设备可能未就绪')
 
@@ -119,14 +151,9 @@ class TtsNode(Node):
         tmpfile = tempfile.mktemp(suffix='.mp3')
         try:
             asyncio.run(_synthesize(tmpfile))
-            # 播放前确保音量最大（防止重启后音量重置）
-            subprocess.run(
-                ['amixer', '-c', self._alsa_card_index, 'sset', 'PCM Playback Volume', '100%'],
-                capture_output=True,
-            )
+            # -o alsa 强制使用 ALSA 后端，避免 mpg123 尝试连接不存在的 JACK 守护进程
             result = subprocess.run(
-                ['mpg123', '-a', self._device, '-q', tmpfile],
-                env={**os.environ, 'AUDIODEV': self._device},
+                ['mpg123', '-o', 'alsa', '-a', self._device, '-q', tmpfile],
                 capture_output=True, text=True,
             )
             if result.returncode != 0:

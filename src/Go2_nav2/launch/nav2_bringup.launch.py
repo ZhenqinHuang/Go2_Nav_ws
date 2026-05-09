@@ -101,9 +101,11 @@ def generate_launch_description():
                 os.path.join(config_dir, "bt_navigator.yaml"),
                 sim_time_param,
                 {
+                    # 启用自定义 BT：0.2Hz 重规划版本
+                    # 避免 ICP 修正与 BT 频繁规划同步触发，DWB 不再被新路径
+                    # 来回拖动方向。详见 behavior_trees/navigate_slow_replan.xml
                     "default_bt_xml_filename": os.path.join(
-                        "/opt/ros/foxy/share/nav2_bt_navigator/behavior_trees",
-                        "navigate_w_replanning_and_recovery.xml"
+                        pkg_share, "behavior_trees", "navigate_slow_replan.xml"
                     ),
                 },
             ],

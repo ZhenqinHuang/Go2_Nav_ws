@@ -45,10 +45,11 @@ global_costmap:
           clearing: True
           marking: True
       # 全局层膨胀与 local 保持一致；过大会让 NavFn 在窄/中等通道找不到路径
+      # 0.22m + factor 5.0 让 NavFn 在 0.8m 走廊也能找到中央通道
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.22
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:

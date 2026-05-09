@@ -59,8 +59,8 @@ else
   echo "[go2_nav2] WARN: ${UNITREE_ROS2_WS}/install/setup.bash 不存在，unitree_api 可能不可用"
 fi
 # Unitree 专用 DDS 环境（设置 RMW_IMPLEMENTATION 和 CYCLONEDDS_URI）
-if [[ -f "${UNITREE_ROS2_WS}/../unitree_ros2/setup.sh" ]]; then
-  source "${HOME}/unitree_ros2/setup.sh"
+if [[ -f "${UNITREE_ROS2_WS}/setup.sh" ]]; then
+  source "${UNITREE_ROS2_WS}/setup.sh"
 elif [[ -f "${HOME}/unitree_ros2/setup.sh" ]]; then
   source "${HOME}/unitree_ros2/setup.sh"
 fi

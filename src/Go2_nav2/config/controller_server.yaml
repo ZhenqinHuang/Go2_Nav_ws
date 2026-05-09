@@ -24,29 +24,30 @@ controller_server:
       # 加上 map->odom 平滑过程，机器狗实际会在目标周围 ±10cm 飘，
       # 15cm 容差经常进了又出 → 反复发新路径
       xy_goal_tolerance: 0.25
-      # 0.15rad (8.6°) 对四足也偏严：Go2 站立时身体本身有 ±3-5° 摇摆，
-      # 加 IMU 漂移很难精确停住 → 反复"摆头"。0.35rad (~20°) 实用足够
-      yaw_goal_tolerance: 0.35
+      # 0.35rad (20°) 实测停姿明显偏 → 收到 0.18rad (~10°) 平衡精度与摆头
+      # Go2 步态原地旋转一步约 0.4rad，0.18 容差落在一步以内但比 0.15 略松
+      # 避免步态死区导致反复进出
+      yaw_goal_tolerance: 0.18
       stateful: True
 
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: False
       min_vel_x: 0.0
-      max_vel_x: 0.35
+      max_vel_x: 0.60
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      max_vel_theta: 1.4
       min_speed_xy: 0.0
-      max_speed_xy: 0.35
+      max_speed_xy: 0.60
       # Go2 原地旋转时角速度低于 ~0.1 rad/s 步态踩不动，设最低 0.15 保证能转起来
       min_speed_theta: 0.15
-      acc_lim_x: 0.8
-      decel_lim_x: -0.8
+      acc_lim_x: 1.2
+      decel_lim_x: -1.5
       acc_lim_y: 0.0
       decel_lim_y: 0.0
-      acc_lim_theta: 1.5
-      decel_lim_theta: -1.5
+      acc_lim_theta: 2.5
+      decel_lim_theta: -2.5
       # 采样密度：DWB 单次评估 vx_samples × vtheta_samples 条轨迹
       # 20×24=480 条在 Orin NX 单核 20Hz 下能稳跑（25×30=750 会爆）
       vx_samples: 20
@@ -88,9 +89,9 @@ controller_server:
       # scale 32：权重加大让 DWB 掉头时更果断，不被 PathDist 拉着往前走
       # slowing_factor 2.0：从 5.0 降低。原来接近目标 yaw 时角速度被除以 5，
       # Go2 步态死区大约 0.1 rad/s，5 倍减速后直接踩不动 → "掉不过来"
-      # 2.0 倍减速在 max_vel_theta=1.0 下接近目标时仍有 0.5 rad/s 能力
+      # 1.5 倍减速在 max_vel_theta=1.4 下接近目标时仍有 ~0.93 rad/s 能力，掉头更果断
       RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 2.0
+      RotateToGoal.slowing_factor: 1.5
       RotateToGoal.lookahead_time: -1.0
       # Oscillation: 原地旋转时 vx≈0，原来 threshold=0.05 会把正常旋转判为振荡
       # 抬到 0.10 让 DWB 在低 vx 时不惩罚旋转轨迹
@@ -128,11 +129,12 @@ local_costmap:
           obstacle_max_range: 2.5
       # 膨胀参数权衡：
       # - 太大 → 窄/中等通道里机器狗整个泡在高代价区，DWB 评分认为"无路可走"
+      #          + cost_regulated 减速到 < 步态死区 → 直接踩不动卡住
       # - 太小 → 转弯擦墙角
-      # Go2 半径 0.25m，机器狗中心到墙最近距离至少 0.30m 才不至于擦
-      # 0.30m 膨胀 + 较陡的衰减 (3.0) → 高代价集中在墙边 0.10m 内，
-      # 通道中央代价为 0，DWB 自由发挥
+      # 0.22m 膨胀仅比 robot_radius 0.25m 略小（致命半径已覆盖核心）
+      # cost_scaling_factor 5.0 让代价快速衰减：墙边 0.05m 内为高代价，
+      # 之外迅速归零 → 0.8m 走廊里中央 0.6m 都是 0 代价，DWB 自由发挥
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.22

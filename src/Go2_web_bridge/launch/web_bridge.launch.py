@@ -19,13 +19,13 @@ def generate_launch_description():
         description='音量调整，如 +50%',
     )
     tts_device_arg = DeclareLaunchArgument(
-        'tts_alsa_device', default_value='plughw:GoUSBAudio,0',
-        description='ALSA 输出设备，如 plughw:GoUSBAudio,0',
+        'tts_alsa_device', default_value='plughw:Device,0',
+        description='ALSA 输出设备，如 plughw:Device,0',
     )
 
     server_url_arg = DeclareLaunchArgument(
         'server_url',
-        default_value='ws://121.40.212.85:30100/ws/source'
+        default_value='wss://jqg.yihexiaozhong.com/ws/source'
                       '?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001',
         description='WebSocket server URL',
     )

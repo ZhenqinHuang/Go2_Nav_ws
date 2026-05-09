@@ -4,6 +4,8 @@ bt_navigator:
     global_frame: "map"
     robot_base_frame: "base_link"
     odom_topic: "/odom"
+    # 注意：实际值由 nav2_bringup.launch.py 中的 launch 参数覆盖，
+    # 指向 share/go2_nav2/behavior_trees/navigate_slow_replan.xml（0.2Hz 重规划）
     default_bt_xml_filename: "/opt/ros/foxy/share/nav2_bt_navigator/behavior_trees/navigate_w_replanning_and_recovery.xml"
     plugin_lib_names:
       - nav2_compute_path_to_pose_action_bt_node

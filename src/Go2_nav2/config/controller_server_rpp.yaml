@@ -20,15 +20,16 @@ controller_server:
       plugin: "nav2_controller::SimpleGoalChecker"
       # 与 DWB 配置保持一致，避免切换 controller 时行为不一
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.35
+      # 收紧到 ~10°，与 DWB 配置保持一致
+      yaw_goal_tolerance: 0.18
       stateful: True
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
       # ── 速度上限（与 cmd_vel_bridge 的 max_vx/max_vyaw 保持一致） ──
-      desired_linear_vel: 0.35
-      max_linear_accel: 1.0
+      desired_linear_vel: 0.60
+      max_linear_accel: 1.2
       max_linear_decel: 1.5
       max_angular_accel: 2.5
 
@@ -55,8 +56,8 @@ controller_server:
       # 配合 inflation_layer 的代价梯度使用
       use_cost_regulated_linear_velocity_scaling: true
       # 这两个值要和 local_costmap.inflation_layer 的同名参数一致
-      inflation_cost_scaling_factor: 2.5
-      cost_scaling_dist: 0.45
+      inflation_cost_scaling_factor: 5.0
+      cost_scaling_dist: 0.22
       cost_scaling_gain: 1.0
 
       # ── 接近终点减速 ────────────────────────────────────────────
@@ -81,11 +82,13 @@ local_costmap:
       use_sim_time: False
       global_frame: odom
       robot_base_frame: base_link
-      update_frequency: 15.0
+      # 与 controller_server.yaml (DWB) 保持一致，避免切换 controller 时
+      # local_costmap 行为突变
+      update_frequency: 18.0
       publish_frequency: 5.0
       rolling_window: True
-      width: 4
-      height: 4
+      width: 5
+      height: 5
       resolution: 0.05
       robot_radius: 0.25
       transform_tolerance: 0.8
@@ -103,7 +106,8 @@ local_costmap:
           obstacle_max_range: 2.5
       # RPP 的 cost_regulated 减速依赖这一层的代价梯度
       # cost_scaling_factor / inflation_radius 与 RPP 的 cost_scaling_* 必须一致
+      # 0.22 + factor 5.0：墙边 0.05m 内高代价，之外快速衰减；走廊中央代价≈0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.45
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.22

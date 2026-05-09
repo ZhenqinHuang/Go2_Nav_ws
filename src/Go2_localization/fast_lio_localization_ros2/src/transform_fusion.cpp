@@ -24,7 +24,9 @@ public:
 		// 平移矫正时间常数（秒）：快速修正位置漂移
 		this->declare_parameter<double>("correction_time_constant_xy", 0.3);
 		// 旋转矫正时间常数（秒）：慢速修正航向，避免 yaw 突变触发 Nav2 摆头
-		this->declare_parameter<double>("correction_time_constant_yaw", 3.0);
+		// 默认 1.0 与 localize_go2.launch.py 设置保持一致；launch 出错回退时
+		// 也能用合理值（之前默认 3.0 会让 yaw 修正过慢）
+		this->declare_parameter<double>("correction_time_constant_yaw", 1.0);
 
 		pub_localization_ = this->create_publisher<nav_msgs::msg::Odometry>("/localization", 10);
 		tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);

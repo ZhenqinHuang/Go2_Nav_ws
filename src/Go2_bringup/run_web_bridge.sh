@@ -24,7 +24,7 @@ ROS_DISTRO_NAME="${ROS_DISTRO_NAME:-foxy}"
 ROS_SETUP="${ROS_SETUP:-/opt/ros/${ROS_DISTRO_NAME}/setup.bash}"
 GO2_NAV_WS="${GO2_NAV_WS:-${DEFAULT_GO2_WS}}"
 
-SERVER_URL="${SERVER_URL:-wss://jqg.yihexiaozhong.com/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001}"
+SERVER_URL="${SERVER_URL:-ws://121.40.212.85:30100/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001}"
 ODOM_HZ="${ODOM_HZ:-2.0}"
 NAV_STATUS_HZ="${NAV_STATUS_HZ:-1.0}"
 RECONNECT_DELAY="${RECONNECT_DELAY:-5.0}"

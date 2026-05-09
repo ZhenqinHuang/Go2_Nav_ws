@@ -126,13 +126,12 @@ def generate_launch_description():
             ],
         ),
 
-        # lifecycle_manager_nav: 延迟激活规划/控制栈，给 FastLIO localization 充足时间
-        # 发布 map->odom TF，避免 costmap 激活超时。
-        # autostart.sh 走流程时 /map_to_odom 早已就绪，这个等待主要是兜底单跑
-        # run_nav2.sh 的场景。
-        # 60s 是保守值（FastLIO 在 PCD 加载慢的机器上也能起来）；如开机感知慢可下调。
+        # lifecycle_manager_nav: 延迟激活规划/控制栈，给 FastLIO localization
+        # 发布 map->odom TF 留时间，避免 costmap 激活超时。
+        # 实测 60s 太长会让 autostart wait_for_action /navigate_to_pose 整个超时
+        # 8s 是平衡点：FastLIO 通常 3-5s 起来，留 3s 余量
         TimerAction(
-            period=60.0,
+            period=8.0,
             actions=[
                 Node(
                     package="nav2_lifecycle_manager",

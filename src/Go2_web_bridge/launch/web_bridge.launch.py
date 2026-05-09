@@ -25,7 +25,7 @@ def generate_launch_description():
 
     server_url_arg = DeclareLaunchArgument(
         'server_url',
-        default_value='wss://jqg.yihexiaozhong.com/ws/source'
+        default_value='ws://121.40.212.85:30100/ws/source'
                       '?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001',
         description='WebSocket server URL',
     )

@@ -10,7 +10,9 @@ web_bridge_node:
   ros__parameters:
     # WebSocket 服务器地址（含鉴权 token 和 source_id）
     # 与 run_web_bridge.sh / web_bridge.launch.py 默认值保持一致
-    server_url: "wss://jqg.yihexiaozhong.com/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001"
+    # 注意：服务方实际在 IP:30100 跑 ws 服务，域名 wss://jqg.yihexiaozhong.com
+    # 默认 443 端口未提供 wss 服务（实测被对端 reset），必须用 IP+30100
+    server_url: "ws://121.40.212.85:30100/ws/source?token=c7e4a9d2b5f1c8e3a6d4b7f2c9a1e5d8&source_id=dog_001"
 
     # 订阅话题
     odom_topic: "/odom"

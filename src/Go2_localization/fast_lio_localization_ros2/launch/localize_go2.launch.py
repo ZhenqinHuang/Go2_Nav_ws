@@ -68,16 +68,14 @@ def generate_launch_description():
             # 大堂特征稀疏时正常 MSE 会高于 0.07，收紧会让有效匹配被持续拒绝
             'localization_th': 0.10,
             # 单次最大修正量限制：防止 ICP 误匹配引发瞬移
-            # 实测 FastLIO 长时间运行后漂移可达 1.2-1.9m（log:
-            # "Correction rejected (dt_xy=1.886m > 0.800)"），原 0.8 阈值
-            # 把所有真正的修正都拒了 → 重定位"后期精度差"
-            # 抬到 2.0m：足以覆盖正常漂移；MSE 0.029-0.041 << 0.10 阈值
-            # 表明 ICP 匹配质量极佳，误匹配风险低
-            # yaw 修正实测 < 0.05rad，1.05 阈值富余很大，保持
-            # 偶发的大跳变由 transform_fusion 平滑常数吸收
-            # 注意：初始定位走另一路径（initialpose），不受这两个限制
-            'max_delta_xy': 2.0,
-            'max_delta_yaw_rad': 1.05,
+            # 2.0m 实测过于宽松：ICP 局部极小值的错误匹配也被接受，
+            # 叠加 xy 时间常数 0.3s，错误修正几乎瞬时生效 → 漂移级联
+            # 0.8m 实测过于保守：长时间运行后真漂移 1.2-1.9m 全被拒
+            # 折中 1.0m：配合 3.5Hz 高频，漂移来不及累积超过 1.0m
+            # yaw 收紧到 0.5rad（~28°）：正常 yaw 漂移 <0.05rad，
+            # 大于 0.5 的几乎都是误匹配
+            'max_delta_xy': 1.0,
+            'max_delta_yaw_rad': 0.5,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )
@@ -97,10 +95,11 @@ def generate_launch_description():
             'map_frame': 'map',
             'odom_frame': 'odom',
             'base_link_frame': 'base_link',
-            # ICP 修正幅度回到 0.8m/1.05rad 后，单次修正可能较大
-            # 平移 0.3s 快速响应；yaw 1.0s 平滑大幅修正避免机器狗被"拽着转"
-            'correction_time_constant_xy': 0.3,
-            'correction_time_constant_yaw': 1.0,
+            # ICP 修正幅度限制到 1.0m 后，单次修正已受控
+            # 平移 0.5s：比之前 0.3s 稍慢，给错误修正留缓冲窗口
+            # yaw 2.0s：介于之前的 3.0（太慢修不回来）和 1.0（太快摆头）之间
+            'correction_time_constant_xy': 0.5,
+            'correction_time_constant_yaw': 2.0,
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
     )

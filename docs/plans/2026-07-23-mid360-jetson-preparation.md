@@ -168,6 +168,7 @@ git commit -m "feat: add reproducible MID360 preparation tools"
 **Files:**
 - Modify: `src/Go2_bringup/go2_nav_start.sh`
 - Modify: `src/Go2_bringup/time_sync_start.sh`
+- Modify: `src/Go2_time_sync/config/ptp_sync.yaml`
 - Modify: `src/Go2_Slam/README.md`
 
 **Step 1: Add a regression search**
@@ -176,7 +177,7 @@ Run:
 
 ```bash
 grep -RInE '/home/unitree/ws_Livox|/home/unitree/ws_fastlio2|192\.168\.123\.' \
-  src/Go2_bringup src/Go2_Slam
+  src/Go2_bringup src/Go2_time_sync src/Go2_Slam
 ```
 
 Expected before the fix: matches in comments and `time_sync_start.sh`.
@@ -185,7 +186,9 @@ Expected before the fix: matches in comments and `time_sync_start.sh`.
 
 Use `${HOME}/ws_Livox` and `${HOME}/ws_fastlio2` as defaults. Make LiDAR IP, host IP and interface overridable environment variables with `192.168.1.12`, `192.168.1.5`, and `eth0` as defaults. Keep PTP disabled as documented until hardware validation.
 
-Correct the FAST-LIO configuration documentation so MID360 `lidar_type` is numeric `1`.
+Update the time-sync YAML so it cannot silently restore the obsolete
+`192.168.123.x` subnet. Correct the FAST-LIO configuration documentation so
+MID360 `lidar_type` is numeric `1`.
 
 **Step 3: Run shell syntax and regression checks**
 
@@ -195,7 +198,7 @@ Run:
 bash -n src/Go2_bringup/go2_nav_start.sh
 bash -n src/Go2_bringup/time_sync_start.sh
 ! grep -RInE '/home/unitree/ws_Livox|/home/unitree/ws_fastlio2|192\.168\.123\.' \
-  src/Go2_bringup src/Go2_Slam
+  src/Go2_bringup src/Go2_time_sync src/Go2_Slam
 git diff --check
 ```
 
@@ -206,6 +209,7 @@ Expected: all commands exit `0`.
 ```bash
 git add src/Go2_bringup/go2_nav_start.sh \
   src/Go2_bringup/time_sync_start.sh \
+  src/Go2_time_sync/config/ptp_sync.yaml \
   src/Go2_Slam/README.md
 git commit -m "fix: align Go2 bringup with Jetson MID360 workspaces"
 ```

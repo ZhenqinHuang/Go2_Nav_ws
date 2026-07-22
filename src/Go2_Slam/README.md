@@ -98,7 +98,7 @@ o3d.visualization.draw_geometries([pcd])
 
 | 参数 | 说明 |
 |---|---|
-| `lidar_type` | 雷达类型，MID360 对应 `livox` |
+| `lidar_type` | 雷达类型，MID360 对应数值 `1`（Livox 系列） |
 | `blind` | 近距盲区（m），建议 0.5 |
 | `det_range` | 最大检测距离（m） |
 | `point_filter_num` | 点云降采倍率（越大越快但精度降低） |

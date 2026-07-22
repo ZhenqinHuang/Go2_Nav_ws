@@ -9,22 +9,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TIME_SYNC_DIR="${WS_ROOT}/src/Go2_time_sync"
 CONFIG_FILE="${TIME_SYNC_DIR}/config/ptp_sync.yaml"
-LIVOX_WS="/home/unitree/ws_Livox"
+NVIDIA_HOME="${NVIDIA_HOME:-/home/nvidia}"
+LIVOX_WS="${LIVOX_WS:-${NVIDIA_HOME}/ws_Livox}"
 
-LIDAR_IP="192.168.123.129"
-HOST_IP="192.168.123.99"
-NTP_SERVER="ntp.aliyun.com"
-PRINT_INTERVAL=5
+DEFAULT_LIDAR_IP="192.168.1.12"
+DEFAULT_HOST_IP="192.168.1.5"
+DEFAULT_IFACE="eth0"
 
 if command -v python3 &>/dev/null && [[ -f "${CONFIG_FILE}" ]]; then
     _y() { python3 -c "import yaml; c=yaml.safe_load(open('${CONFIG_FILE}')); print(c$1)" 2>/dev/null || echo "$2"; }
-    LIDAR_IP="$(_y "['lidar']['ip']"      "${LIDAR_IP}")"
-    HOST_IP="$(_y  "['lidar']['host_ip']" "${HOST_IP}")"
+    DEFAULT_LIDAR_IP="$(_y "['lidar']['ip']"      "${DEFAULT_LIDAR_IP}")"
+    DEFAULT_HOST_IP="$(_y  "['lidar']['host_ip']" "${DEFAULT_HOST_IP}")"
+    DEFAULT_IFACE="$(_y    "['network']['interface']" "${DEFAULT_IFACE}")"
 fi
 
-# Auto-detect interface on 192.168.123.x subnet, fall back to eth0
-IFACE=$(ip -o -4 addr show | awk '$4 ~ /^192\.168\.123\./ {print $2; exit}')
-IFACE="${IFACE:-eth0}"
+LIDAR_IP="${LIDAR_IP:-${DEFAULT_LIDAR_IP}}"
+HOST_IP="${HOST_IP:-${DEFAULT_HOST_IP}}"
+IFACE="${IFACE:-${DEFAULT_IFACE}}"
+NTP_SERVER="${NTP_SERVER:-ntp.aliyun.com}"
+PRINT_INTERVAL="${PRINT_INTERVAL:-5}"
 
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'

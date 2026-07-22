@@ -87,6 +87,9 @@ check_command "MID360 JSON parses" \
 check_command "FAST-LIO YAML parses" \
     python3 -c \
     "import yaml; yaml.safe_load(open('${FASTLIO_WS}/src/FAST_LIO_ROS2/config/mid360.yaml'))"
+check_command "FAST-LIO service callback is Foxy-compatible" \
+    bash "${SCRIPT_DIR}/tests/test_fast_lio_foxy_compat.sh" \
+    "${FASTLIO_WS}/src/FAST_LIO_ROS2/src/laserMapping.cpp"
 
 if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq mid360-direct; then
     address="$(nmcli -g ipv4.addresses connection show mid360-direct)"

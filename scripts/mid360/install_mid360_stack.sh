@@ -50,13 +50,20 @@ source_setup() {
 
 repo_status_is_allowed() {
     local repo_dir="$1"
-    local allowed_path="${2:-}"
-    local line path
+    local allowed_paths="${2:-}"
+    local line path allowed matched
 
     while IFS= read -r line; do
         [[ -z "${line}" ]] && continue
         path="${line:3}"
-        if [[ -z "${allowed_path}" || "${path}" != "${allowed_path}" ]]; then
+        matched=0
+        for allowed in ${allowed_paths}; do
+            if [[ "${path}" == "${allowed}" ]]; then
+                matched=1
+                break
+            fi
+        done
+        if (( matched == 0 )); then
             return 1
         fi
     done < <(git -C "${repo_dir}" status --porcelain)
@@ -127,6 +134,35 @@ install_managed_config() {
     log "已安装配置: ${destination}"
 }
 
+install_managed_patch() {
+    local patch_file="$1"
+    local repo_dir="$2"
+    local relative_path="$3"
+    local source_file="${repo_dir}/${relative_path}"
+    local backup="${BACKUP_ROOT}/vendor-defaults/${relative_path//\//__}"
+
+    [[ -f "${patch_file}" ]] || die "兼容补丁不存在: ${patch_file}"
+    [[ -f "${source_file}" ]] || die "补丁目标不存在: ${source_file}"
+
+    if git -C "${repo_dir}" apply --reverse --check "${patch_file}" \
+        >/dev/null 2>&1; then
+        log "兼容补丁已应用: ${relative_path}"
+        return
+    fi
+
+    git -C "${repo_dir}" diff --quiet -- "${relative_path}" ||
+        die "检测到人工源码修改，拒绝应用补丁: ${source_file}"
+    git -C "${repo_dir}" apply --check "${patch_file}" ||
+        die "补丁与固定源码版本不匹配: ${patch_file}"
+
+    mkdir -p "$(dirname "${backup}")"
+    if [[ ! -e "${backup}" ]]; then
+        cp -a "${source_file}" "${backup}"
+    fi
+    git -C "${repo_dir}" apply "${patch_file}"
+    log "已应用 ROS 2 Foxy 兼容补丁: ${relative_path}"
+}
+
 main() {
     local os_id os_version arch
     os_id="$(. /etc/os-release; printf '%s' "${ID}")"
@@ -194,8 +230,12 @@ main() {
         "${FASTLIO_WS}/src/FAST_LIO_ROS2" \
         "${FASTLIO_COMMIT}" \
         "ros2" \
-        "config/mid360.yaml"
+        "config/mid360.yaml src/laserMapping.cpp"
     git -C "${FASTLIO_WS}/src/FAST_LIO_ROS2" submodule update --init --recursive
+    install_managed_patch \
+        "${SCRIPT_DIR}/patches/fast_lio_ros2_foxy_service_callback.patch" \
+        "${FASTLIO_WS}/src/FAST_LIO_ROS2" \
+        "src/laserMapping.cpp"
     install_managed_config \
         "${SCRIPT_DIR}/config/mid360.yaml" \
         "${FASTLIO_WS}/src/FAST_LIO_ROS2" \

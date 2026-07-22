@@ -41,7 +41,8 @@ err()  { echo -e "${RED}[ERR  $(date '+%H:%M:%S')] [AUTOSTART]${NC} $*" >&2; }
 # ── 参数校验 ─────────────────────────────────────────────────────────────────
 # 默认值：直接 bash go2_autostart.sh 即可，不用每次前面加 MAP_YAML=...
 # 需要换地图时仍可通过环境变量覆盖：MAP_YAML=/path/to/other.yaml bash go2_autostart.sh
-MAP_YAML="${MAP_YAML:-/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml}"
+GO2_NAV_WS="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+MAP_YAML="${MAP_YAML:-${GO2_NAV_WS}/maps/MID360_map.yaml}"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "用法: MAP_YAML=/path/to/maps.yaml bash $(basename "$0")"

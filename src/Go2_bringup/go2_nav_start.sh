@@ -11,7 +11,7 @@
 # Common overrides:
 #   LIVOX_WS=/home/unitree/ws_Livox \
 #   FASTLIO_WS=/home/unitree/ws_fastlio2 \
-#   GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
+#   GO2_NAV_WS=/home/nvidia/Go2_Nav_ws \
 #   FASTLIO_CONFIG=/home/unitree/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml \
 #   FASTLIO_LOC_PCD=/path/to/map.pcd \
 #   bash go2_nav_start.sh

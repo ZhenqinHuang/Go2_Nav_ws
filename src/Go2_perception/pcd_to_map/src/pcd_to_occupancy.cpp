@@ -36,8 +36,7 @@ public:
 
         cloud_.reset(new pcl::PointCloud<pcl::PointXYZ>);
         if (!loadPCD()) {
-            rclcpp::shutdown();
-            return;
+            throw std::runtime_error("failed to load PCD: " + pcd_file_);
         }
 
         rclcpp::QoS qos(1);
@@ -52,8 +51,6 @@ public:
 
         publish();
 
-        // 所有工作已完成，通知 spin() 退出
-        rclcpp::shutdown();
     }
 
 private:
@@ -219,7 +216,16 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<PCDToOccupancyNode>());
+    try {
+        // This is a one-shot conversion utility. Construction performs the
+        // conversion and writes the output; spinning after shutdown caused an
+        // invalid guard-condition crash on ROS 2 Foxy.
+        auto node = std::make_shared<PCDToOccupancyNode>();
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(rclcpp::get_logger("pcd_to_occupancy"), "%s", e.what());
+        rclcpp::shutdown();
+        return 1;
+    }
     rclcpp::shutdown();
     return 0;
 }

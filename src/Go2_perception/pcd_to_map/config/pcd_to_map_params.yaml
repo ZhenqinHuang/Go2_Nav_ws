@@ -8,11 +8,11 @@ pcd_to_occupancy:
 
         # ── 输入输出 ─────────────────────────────────────────────────
         # pcd_file: PCD 文件的绝对路径
-        pcd_file: "/home/unitree/Go2_Nav_ws/maps/MID360.pcd"
+        pcd_file: "/home/nvidia/Go2_Nav_ws/maps/MID360.pcd"
 
         # output_path: 输出地图的路径前缀（不含扩展名），留空则不保存文件
         # 生成 <output_path>.pgm 和 <output_path>.yaml
-        output_path: "/home/unitree/Go2_Nav_ws/maps/MID360_map"
+        output_path: "/home/nvidia/Go2_Nav_ws/maps/MID360_map"
 
         # ── 栅格分辨率 ────────────────────────────────────────────────
         # 0.05 m/cell 在 70 平米室内精度足够，与 Nav2 代价地图默认分辨率一致

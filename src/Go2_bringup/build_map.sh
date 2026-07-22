@@ -7,7 +7,7 @@
 # 常用覆盖变量：
 #   PCD_FILE=/path/to/your.pcd \
 #   OUTPUT_PATH=/path/to/output_map \
-#   GO2_NAV_WS=/home/unitree/Go2_Nav_ws \
+#   GO2_NAV_WS=/home/nvidia/Go2_Nav_ws \
 #   bash build_map.sh
 
 set -Eeuo pipefail

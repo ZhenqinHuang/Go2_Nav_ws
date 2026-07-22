@@ -108,7 +108,15 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        condition=IfCondition(LaunchConfiguration('rviz'))
+        condition=IfCondition(LaunchConfiguration('rviz')),
+        arguments=[
+            '-d',
+            PathJoinSubstitution([
+                FindPackageShare('fast_lio_localization_ros2'),
+                'rviz_cfg',
+                'fast_lio_localization_ros2.rviz',
+            ]),
+        ],
     )
 
     return LaunchDescription([

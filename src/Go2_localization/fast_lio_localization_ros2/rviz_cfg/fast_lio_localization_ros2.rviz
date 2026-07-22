@@ -72,10 +72,10 @@ Visualization Manager:
             Min Value: -10
             Value: true
           Axis: Z
-          Channel Name: intensity
+          Channel Name: z
           Class: rviz_default_plugins/PointCloud2
           Color: 255; 255; 255
-          Color Transformer: Intensity
+          Color Transformer: AxisColor
           Decay Time: 0
           Enabled: true
           Invert Rainbow: false
@@ -83,7 +83,7 @@ Visualization Manager:
           Max Intensity: 151
           Min Color: 0; 0; 0
           Min Intensity: 0
-          Name: CloudReg
+          Name: OfflineMap3D
           Position Transformer: XYZ
           Selectable: true
           Size (Pixels): 3
@@ -91,11 +91,11 @@ Visualization Manager:
           Style: Points
           Topic:
             Depth: 5
-            Durability Policy: Volatile
+            Durability Policy: Transient Local
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /cloud_registered
+            Value: /map3d
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -111,7 +111,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: Intensity
           Decay Time: 120
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 151
@@ -132,13 +132,13 @@ Visualization Manager:
             Value: /cloud_registered
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
       Enabled: true
       Name: Mapping
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: camera_init
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:
@@ -217,5 +217,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1200
-  X: 3119
-  Y: 554
+  X: 100
+  Y: 100

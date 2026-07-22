@@ -5,12 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=unitree
-Group=unitree
-WorkingDirectory=/home/unitree/Go2_Nav_ws
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/Go2_Nav_ws
 
 # 地图路径：按实际修改
-Environment="MAP_YAML=/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml"
+Environment="MAP_YAML=/home/nvidia/Go2_Nav_ws/maps/MID360_map.yaml"
 # 跳过 colcon 重新构建（开机启动时已构建好）
 Environment="NAV2_SKIP_BUILD=1"
 # 不启动 RViz（无显示器）
@@ -24,7 +24,7 @@ Environment="ALSA_CARD=Device"
 Environment="XDG_RUNTIME_DIR=/run/user/1000"
 Environment="PULSE_SERVER=unix:/run/user/1000/pulse/native"
 
-ExecStart=/home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
+ExecStart=/home/nvidia/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 
 # 异常退出 60 秒后重启（留够时间让 cgroup 里所有子进程完全退出）
 Restart=on-failure

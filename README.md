@@ -6,6 +6,7 @@
 |---|---|
 | 机器人 | Unitree Go2 |
 | 激光雷达 | Livox MID360（倾斜安装 13°） |
+| 机载雷达实验链路 | Unitree 4D LiDAR L2 + 内置 IMU |
 | 计算平台 | Jetson Orin NX 16GB |
 | 操作系统 | Ubuntu 20.04 |
 | ROS 版本 | ROS 2 Foxy |
@@ -22,6 +23,11 @@ MID360 在 Jetson 上的安装、接线、验证与故障恢复，请先阅读
 Go2 与 Jetson 的直连网络、CycloneDDS 环境、Sport API 控制权冲突及实机验证状态，
 请阅读
 [《Go2 直连 Jetson 控制验证记录（2026-07-23）》](docs/go2/控制验证记录_2026-07-23.md)。
+
+机载 Unitree 4D LiDAR L2 接入 FAST-LIO2 的独立实验链路见
+[《机载 L2 FAST-LIO2 技术手册》](docs/go2/机载L2_FAST-LIO2技术手册.md)；
+实机静止测试证据见
+[《L2 FAST-LIO2 验证记录（2026-07-23）》](docs/go2/l2_fastlio2验证记录_2026-07-23.md)。
 
 ---
 
@@ -119,6 +125,7 @@ map ──(transform_fusion, 100 Hz)──> odom ──(odom_tf_bridge, 10 Hz)�
 | `src/Go2_web_bridge` | 远程控制模块：云端 WebSocket 桥接 + 局域网 rosbridge |
 | `src/Go2_time_sync` | 时间同步：PTP Master 向 MID360 提供精确时间（当前未启用） |
 | `src/Go2_Slam` | 建图说明（FAST-LIO2 离线建图） |
+| `scripts/go2_l2` | 机载 L2 输入探针、FAST-LIO2 配置与安全启动器 |
 | `maps/` | 预构建地图文件（MID360_map.pgm + MID360_map.yaml） |
 
 ---
@@ -166,6 +173,25 @@ ros2 launch pcd_to_map pcd_to_map.launch.py \
   pcd_file:=~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd \
   output_path:=~/Go2_Nav_ws/maps/MID360_map
 ```
+
+### 3.1 机载 L2 静止验证（实验分支）
+
+该入口不启动 Nav2，也不发送运动命令：
+
+```bash
+cd ~/Go2_Nav_ws
+
+# 先做只读输入检查
+UNITREE_INTERFACE=eth0 \
+  bash scripts/go2_l2/run_fastlio2_l2.sh --probe-only
+
+# 报告通过后，保持机器人静止启动 FAST-LIO2
+UNITREE_INTERFACE=eth0 \
+  bash scripts/go2_l2/run_fastlio2_l2.sh
+```
+
+动态建图必须重新取得明确运动授权。完整说明见
+[`scripts/go2_l2/README.md`](scripts/go2_l2/README.md)。
 
 ### 4. 一键启动全链路（推荐）
 

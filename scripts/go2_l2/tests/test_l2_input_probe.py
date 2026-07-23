@@ -1,7 +1,9 @@
+from pathlib import Path
 import unittest
 
 from scripts.go2_l2.l2_input_probe import (
     analyze_point_times,
+    build_report,
     classify_unitree_lidar,
     evaluate_rates,
     validate_point_fields,
@@ -127,6 +129,72 @@ class TopicRateValidationTest(unittest.TestCase):
                 "IMU rate 80.000 Hz is outside 200.0-350.0 Hz",
             ],
         )
+
+
+class ReadinessReportTest(unittest.TestCase):
+    def test_builds_ready_l2_report(self):
+        point_times = [index / 128000.0 for index in range(8000)]
+        report = build_report(
+            field_datatypes={
+                "x": 7,
+                "y": 7,
+                "z": 7,
+                "intensity": 7,
+                "ring": 4,
+                "time": 7,
+            },
+            point_times=point_times,
+            cloud_hz=15.4,
+            imu_hz=249.9,
+            effective_points_hz=64000.0,
+            cloud_messages=92,
+            imu_messages=1499,
+            ring_values=[1],
+            timestamp_regressions=0,
+            wall_clock_offset_s=0.07,
+        )
+
+        self.assertEqual(report["detected_model"], "L2")
+        self.assertTrue(report["ready_for_fastlio2"])
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["ring_values"], [1])
+
+    def test_l1_report_is_not_ready_for_l2_pipeline(self):
+        point_times = [index / 43200.0 for index in range(1000)]
+        report = build_report(
+            field_datatypes={
+                "x": 7,
+                "y": 7,
+                "z": 7,
+                "intensity": 7,
+                "ring": 4,
+                "time": 7,
+            },
+            point_times=point_times,
+            cloud_hz=15.0,
+            imu_hz=250.0,
+            effective_points_hz=21600.0,
+            cloud_messages=90,
+            imu_messages=1500,
+            ring_values=[1],
+            timestamp_regressions=0,
+            wall_clock_offset_s=0.05,
+        )
+
+        self.assertEqual(report["detected_model"], "L1")
+        self.assertFalse(report["ready_for_fastlio2"])
+        self.assertIn(
+            "detected lidar model L1, expected L2",
+            report["errors"],
+        )
+
+    def test_probe_source_has_no_robot_motion_interface(self):
+        source_path = Path(__file__).resolve().parents[1] / "l2_input_probe.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("/api/sport/request", source)
+        self.assertNotIn("unitree_api.msg.Request", source)
+        self.assertNotIn("create_publisher", source)
 
 
 if __name__ == "__main__":

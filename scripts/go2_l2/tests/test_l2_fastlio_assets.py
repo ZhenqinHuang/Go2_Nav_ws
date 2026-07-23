@@ -6,6 +6,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = REPO_ROOT / "scripts" / "go2_l2" / "config" / "go2_l2.yaml"
+LAUNCHER_PATH = REPO_ROOT / "scripts" / "go2_l2" / "run_fastlio2_l2.sh"
 
 
 class L2FastlioConfigTest(unittest.TestCase):
@@ -58,6 +59,36 @@ class L2FastlioConfigTest(unittest.TestCase):
             "/home/nvidia/Go2_Nav_ws/maps/Go2_L2.pcd",
         )
         self.assertFalse(params["pcd_save"]["pcd_save_en"])
+
+
+class L2FastlioLauncherTest(unittest.TestCase):
+    def launcher_source(self):
+        return LAUNCHER_PATH.read_text(encoding="utf-8")
+
+    def test_sources_required_workspaces_and_l2_config(self):
+        source = self.launcher_source()
+
+        self.assertIn('UNITREE_INTERFACE="${UNITREE_INTERFACE:-eth0}"', source)
+        self.assertIn("/home/nvidia/unitree_ros2/setup.sh", source)
+        self.assertIn("/home/nvidia/ws_Livox/install/setup.bash", source)
+        self.assertIn("/home/nvidia/ws_fastlio2/install/setup.bash", source)
+        self.assertIn("ros2 launch fast_lio mapping.launch.py", source)
+        self.assertIn("config_file:=go2_l2.yaml", source)
+        self.assertIn("exec ros2 launch", source)
+
+    def test_supports_probe_only_gate(self):
+        source = self.launcher_source()
+
+        self.assertIn("--probe-only", source)
+        self.assertIn("l2_input_probe.py", source)
+
+    def test_contains_no_robot_motion_interface(self):
+        source = self.launcher_source()
+
+        self.assertNotIn("/api/sport/request", source)
+        self.assertNotIn("SportClient", source)
+        self.assertNotIn("Move(", source)
+        self.assertNotIn("create_publisher", source)
 
 
 if __name__ == "__main__":

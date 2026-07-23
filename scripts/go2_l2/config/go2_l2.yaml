@@ -1,0 +1,57 @@
+/**:
+  ros__parameters:
+    # Unitree L2 produces roughly 64k effective points/s. Keep the first
+    # stationary smoke test conservative while retaining enough geometry.
+    feature_extract_enable: false
+    point_filter_num: 2
+    max_iteration: 3
+    filter_size_surf: 0.3
+    filter_size_map: 0.3
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    map_file_path: "/home/nvidia/Go2_Nav_ws/maps/Go2_L2.pcd"
+
+    common:
+      lid_topic: "/utlidar/cloud"
+      imu_topic: "/utlidar/imu"
+      # Both topics are emitted by the onboard L2 service in one clock domain.
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+
+    preprocess:
+      # The current FAST_LIO_ROS2 value 2 selects its PointCloud2 path with
+      # float `time` and uint16 `ring`, matching /utlidar/cloud exactly.
+      lidar_type: 2
+      scan_line: 1
+      blind: 0.10
+      timestamp_unit: 0
+      scan_rate: 15
+
+    mapping:
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0
+      det_range: 30.0
+      # The L2 LiDAR and its built-in IMU have a fixed factory extrinsic.
+      extrinsic_est_en: false
+      # FAST-LIO expects the LiDAR origin expressed in the IMU frame.
+      # Unitree publishes the inverse relation (IMU origin in LiDAR frame).
+      extrinsic_T: [0.007698, 0.014655, -0.00667]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    publish:
+      path_en: true
+      effect_map_en: false
+      map_en: true
+      scan_publish_en: true
+      dense_publish_en: false
+      scan_bodyframe_pub_en: true
+
+    pcd_save:
+      # Keep disabled until the stationary smoke test proves the input path.
+      pcd_save_en: false
+      interval: -1

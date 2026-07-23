@@ -55,6 +55,9 @@ require_file "${CONFIG_DIR}/go2_l2.yaml"
 require_file "${PROBE}"
 
 export UNITREE_INTERFACE
+# ROS 2 Foxy setup scripts read optional variables without ${name:-}. Disable
+# nounset only across third-party environment loading, then restore it.
+set +u
 # shellcheck source=/dev/null
 source "/home/nvidia/unitree_ros2/setup.sh"
 # FAST_LIO_ROS2 links against livox_ros_driver2 message types even though the
@@ -63,6 +66,7 @@ source "/home/nvidia/unitree_ros2/setup.sh"
 source "/home/nvidia/ws_Livox/install/setup.bash"
 # shellcheck source=/dev/null
 source "/home/nvidia/ws_fastlio2/install/setup.bash"
+set -u
 
 if [[ "${SKIP_PROBE}" != true ]]; then
     python3 "${PROBE}" \

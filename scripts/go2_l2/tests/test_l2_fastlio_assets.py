@@ -82,6 +82,16 @@ class L2FastlioLauncherTest(unittest.TestCase):
         self.assertIn("--probe-only", source)
         self.assertIn("l2_input_probe.py", source)
 
+    def test_temporarily_disables_nounset_for_ros_foxy_setup(self):
+        source = self.launcher_source()
+        first_source = source.index('source "/home/nvidia/unitree_ros2/setup.sh"')
+        last_source = source.index(
+            'source "/home/nvidia/ws_fastlio2/install/setup.bash"'
+        )
+
+        self.assertLess(source.index("set +u"), first_source)
+        self.assertGreater(source.index("set -u", last_source), last_source)
+
     def test_contains_no_robot_motion_interface(self):
         source = self.launcher_source()
 

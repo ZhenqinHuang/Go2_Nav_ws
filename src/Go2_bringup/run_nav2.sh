@@ -24,6 +24,9 @@ USE_RVIZ="${USE_RVIZ:-false}"
 USE_SIM_TIME="${USE_SIM_TIME:-false}"
 # 本地控制器：dwb (默认，Go2 实测可用) 或 rpp (Regulated Pure Pursuit)
 CONTROLLER="${CONTROLLER:-dwb}"
+# udp: external /cmd_vel -> internal native SDK gateway (normal path)
+# direct-dds: retained diagnostic fallback using the original external bridge
+GO2_CONTROL_BACKEND="${GO2_CONTROL_BACKEND:-udp}"
 
 usage() {
   echo "用法: MAP_YAML=/path/to/maps.yaml bash $(basename "$0")"
@@ -67,9 +70,9 @@ fi
 set -u
 
 if [[ "${NAV2_SKIP_BUILD:-0}" != "1" ]]; then
-  echo "[go2_nav2] colcon build --packages-select go2_nav2 ..."
+  echo "[go2_nav2] colcon build --packages-select go2_nav2 go2_control_gateway ..."
   cd "${GO2_NAV_WS}"
-  colcon build --packages-select go2_nav2
+  colcon build --packages-select go2_nav2 go2_control_gateway
 fi
 
 set +u
@@ -89,6 +92,7 @@ fi
 echo "[go2_nav2] 清理残留进程..."
 pkill -f "ros2 launch go2_nav2" >/dev/null 2>&1 || true
 pkill -f "go2_cmd_vel_bridge_node" >/dev/null 2>&1 || true
+pkill -f "go2_cmd_vel_udp_sender" >/dev/null 2>&1 || true
 pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_map_server/map_server" >/dev/null 2>&1 || true
 pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_planner/planner_server" >/dev/null 2>&1 || true
 pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_controller/controller_server" >/dev/null 2>&1 || true
@@ -96,11 +100,23 @@ pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_bt_navigator/bt_navigator" >/dev/
 pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_recoveries/recoveries_server" >/dev/null 2>&1 || true
 pkill -f "/opt/ros/${ROS_DISTRO_NAME}/lib/nav2_lifecycle_manager/lifecycle_manager" >/dev/null 2>&1 || true
 
-# 启动 cmd_vel 执行桥接（后台运行，Nav2 的 /cmd_vel -> Go2 sport API）
-echo "[go2_nav2] 启动 cmd_vel 执行桥接..."
-ros2 launch go2_nav2 cmd_vel_bridge.launch.py >/tmp/go2_cmd_vel_bridge.log 2>&1 &
-CMD_VEL_BRIDGE_PID=$!
-echo "[go2_nav2] cmd_vel bridge PID=${CMD_VEL_BRIDGE_PID}，日志: /tmp/go2_cmd_vel_bridge.log"
+# Default execution path is the fail-closed UDP sender. The original direct
+# DDS bridge remains available only as an explicit diagnostic fallback.
+if [[ "${GO2_CONTROL_BACKEND}" == "udp" ]]; then
+  echo "[go2_nav2] 启动外载 -> 内载 UDP 速度网关..."
+  ros2 launch go2_control_gateway udp_sender.launch.py \
+    >/tmp/go2_cmd_vel_gateway.log 2>&1 &
+  CMD_VEL_BRIDGE_PID=$!
+  echo "[go2_nav2] UDP sender PID=${CMD_VEL_BRIDGE_PID}，日志: /tmp/go2_cmd_vel_gateway.log"
+elif [[ "${GO2_CONTROL_BACKEND}" == "direct-dds" ]]; then
+  echo "[go2_nav2] WARN: 使用仅供诊断的外载直连 DDS bridge"
+  ros2 launch go2_nav2 cmd_vel_bridge.launch.py \
+    >/tmp/go2_cmd_vel_bridge.log 2>&1 &
+  CMD_VEL_BRIDGE_PID=$!
+else
+  echo "[go2_nav2] ERROR: GO2_CONTROL_BACKEND 仅支持 udp 或 direct-dds"
+  exit 1
+fi
 
 echo "[go2_nav2] 启动 Nav2 决策层"
 echo "[go2_nav2] map=${MAP_YAML}  use_sim_time=${USE_SIM_TIME}  use_rviz=${USE_RVIZ}  controller=${CONTROLLER}"

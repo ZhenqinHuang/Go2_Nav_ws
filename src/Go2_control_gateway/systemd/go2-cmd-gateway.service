@@ -1,0 +1,21 @@
+[Unit]
+Description=Go2 internal fail-closed UDP command gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=unitree
+Group=unitree
+EnvironmentFile=/etc/go2-cmd-gateway/gateway.env
+ExecStart=/bin/bash -c 'exec /usr/local/bin/go2_cmd_gateway --bind "${GO2_GATEWAY_BIND_IP}" --port "${GO2_GATEWAY_PORT}" --allowed-ip "${GO2_GATEWAY_ALLOWED_IP}" --interface "${GO2_GATEWAY_INTERFACE}"'
+ExecStop=/bin/kill -TERM $MAINPID
+KillSignal=SIGTERM
+TimeoutStopSec=3
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

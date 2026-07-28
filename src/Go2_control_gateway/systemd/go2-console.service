@@ -10,7 +10,8 @@ Group=nvidia
 WorkingDirectory=/home/nvidia/Go2_Nav_ws
 Environment=ROS_DISTRO=foxy
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/bin/bash -lc 'source /opt/ros/foxy/setup.bash && source /home/nvidia/unitree_ros2/install/setup.bash && source /home/nvidia/unitree_ros2/setup.sh && source /home/nvidia/Go2_Nav_ws/install/setup.bash && exec ros2 run go2_control_gateway go2_console --bind 192.168.0.101 --port 8080 --password-hash-file /etc/go2-console/password.hash'
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ExecStart=/bin/bash -lc 'source /opt/ros/foxy/setup.bash && source /home/nvidia/unitree_ros2/install/setup.bash && source /home/nvidia/Go2_Nav_ws/install/setup.bash && exec ros2 run go2_control_gateway go2_console --bind 192.168.0.101 --port 8080 --password-hash-file /etc/go2-console/password.hash'
 ExecStop=/bin/kill -TERM $MAINPID
 TimeoutStopSec=5
 Restart=on-failure

@@ -35,6 +35,14 @@ def test_console_service_runs_as_nvidia_on_management_lan_not_root():
     assert "Restart=on-failure" in service
 
 
+def test_console_service_does_not_bind_ros_to_the_go2_only_interface():
+    service = text(PACKAGE / "systemd" / "go2-console.service")
+
+    assert "unitree_ros2/install/setup.bash" in service
+    assert "unitree_ros2/setup.sh" not in service
+    assert "RMW_IMPLEMENTATION=rmw_fastrtps_cpp" in service
+
+
 def test_deployment_scripts_contain_no_plaintext_board_passwords():
     paths = [
         PACKAGE / "scripts" / "deploy_internal_gateway.sh",

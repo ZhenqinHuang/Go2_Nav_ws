@@ -155,6 +155,10 @@ class SenderCore:
         self._disarm_pending = True
         self._clear_commands()
 
+    def abort_arm(self) -> None:
+        """Revoke the current token after an Arm attempt cannot be confirmed."""
+        self._fail_closed()
+
     def set_nav_active(self, active: bool) -> None:
         active = bool(active)
         if active == self._nav_active:

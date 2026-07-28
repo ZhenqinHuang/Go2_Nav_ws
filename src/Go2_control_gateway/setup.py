@@ -34,5 +34,9 @@ setup(
     description="Fail-closed external-to-internal control gateway for Unitree Go2.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "go2_cmd_vel_udp_sender = go2_control_gateway.udp_sender_node:main",
+        ]
+    },
 )

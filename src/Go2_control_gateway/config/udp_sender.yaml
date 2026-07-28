@@ -1,0 +1,28 @@
+go2_cmd_vel_udp_sender:
+  ros__parameters:
+    local_ip: "192.168.123.5"
+    local_port: 15001
+    remote_ip: "192.168.123.18"
+    remote_port: 15000
+    send_hz: 20.0
+
+    cmd_vel_topic: "/cmd_vel"
+    manual_cmd_vel_topic: "/go2/manual_cmd_vel"
+    localization_topic: "/map_to_odom"
+    nav_status_topic: "/navigate_to_pose/_action/status"
+
+    max_vx: 0.6
+    max_vy: 0.0
+    max_vyaw: 1.4
+    velocity_deadband: 0.03
+    vyaw_smooth_alpha: 0.35
+    nav_cmd_timeout_sec: 0.6
+    manual_cmd_timeout_sec: 0.2
+    ack_timeout_sec: 0.5
+    arm_timeout_sec: 1.0
+
+    localization_guard_enabled: true
+    localization_timeout_sec: 1.5
+    correction_pause_sec: 0.8
+    correction_pause_delta_xy: 0.5
+    correction_pause_delta_yaw: 0.7

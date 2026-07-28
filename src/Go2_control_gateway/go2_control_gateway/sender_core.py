@@ -215,11 +215,17 @@ class SenderCore:
     def handle_ack(self, ack: AckFrame) -> bool:
         if ack.session_id != self._session_id:
             return False
-        if self._arm_token == 0 or ack.arm_token != self._arm_token:
-            return False
         if ack.sequence <= self._last_ack_sequence:
             return False
         if ack.sequence > self._last_sent_sequence:
+            return False
+        if self._arm_token == 0:
+            if ack.arm_token != 0 or ack.state != GatewayState.LOCKED:
+                return False
+            self._last_ack_sequence = ack.sequence
+            self._last_ack_at = self._clock()
+            return True
+        if ack.arm_token != self._arm_token:
             return False
 
         self._last_ack_sequence = ack.sequence

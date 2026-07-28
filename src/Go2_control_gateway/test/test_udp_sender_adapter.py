@@ -137,6 +137,27 @@ def test_ack_receiver_filters_source_and_updates_sender_core():
     assert core.is_armed
 
 
+def test_locked_heartbeat_ack_marks_link_online_without_arming():
+    module = load_adapter()
+    adapter, core, fake_socket, _clock = make_adapter(module)
+    adapter.send_once()
+    packet = decode_control(fake_socket.sent[-1][0])
+    locked_ack = AckFrame(
+        session_id=packet.session_id,
+        sequence=packet.sequence,
+        arm_token=0,
+        state=GatewayState.LOCKED,
+        sdk_code=0,
+        fault=FaultReason.NONE,
+    )
+
+    assert adapter.handle_datagram(
+        encode_ack(locked_ack), ("192.168.123.18", 15000)
+    )
+    assert not core.is_armed
+    assert json.loads(adapter.status_json())["gateway_link"] == "online"
+
+
 def test_arm_wait_is_bounded_to_one_second_without_matching_ack():
     module = load_adapter()
     adapter, core, _fake_socket, clock = make_adapter(module)

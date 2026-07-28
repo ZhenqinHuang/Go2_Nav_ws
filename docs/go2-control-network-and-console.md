@@ -153,6 +153,11 @@ http://192.168.0.101:8080
 
 这是受信任局域网内的 HTTP 服务，不做公网端口映射。Cookie 为 HttpOnly / SameSite=Strict，所有改变状态的请求还需要 CSRF 令牌；同一时间只有一个浏览器能持有控制权。
 
+控制台 systemd 服务使用 `rmw_fastrtps_cpp`，不加载把 CycloneDDS 强制绑定到
+`eth0` 的 `/home/nvidia/unitree_ros2/setup.sh`。因此内载断电、Go2 专用链路无载波时，
+管理页面仍能从 `wlan0` 打开并显示网关离线。该设置只属于 Web 管理面；Nav2 UDP
+sender 仍使用已经验证的 `eth0` Unitree DDS 环境。
+
 ### 4.3 启动导航
 
 定位和雷达链路照旧启动。启动 Nav2 时默认选择 UDP：
@@ -276,4 +281,6 @@ GO2_CONTROL_BACKEND=direct-dds \
 
 已完成 Python 单元/HTTP/前端契约、Jetson aarch64 C++ 协议与状态机测试、UDP dry-run 集成以及桌面/移动浏览器冒烟验证。2026-07-28 已把源码部署到外载 `/home/nvidia/Go2_Nav_ws`，并在其 Ubuntu 20.04、ROS 2 Foxy、Python 3.8 环境完成 `79 passed`；ROS sender → C++ dry-run gateway 的在线、Arm、ACK、Disarm、LOCKED 闭环也已通过。
 
-外载 Web 服务尚未安装启用，因为 `/etc/go2-console/password.hash` 必须由使用方先设置操作员密码。内载关机期间也无法完成 `/usr/local/lib/libunitree_go2_sdk.a` 的最终链接和新网关实机运动验收；这些项目在[验收清单](go2-control-acceptance-checklist.md)中明确标为暂未验证，不能用 dry-run 结果替代。
+外载 Web 服务已安装并启用。2026-07-28 从局域网访问首页、登录和状态 API 均返回 HTTP 200；在内载离线且 `eth0` 无载波时，页面正确显示网关离线、未 Arm。密码文件 `/etc/go2-console/password.hash` 只保存 scrypt 哈希，仓库不保存明文密码。
+
+内载关机期间仍无法完成 `/usr/local/lib/libunitree_go2_sdk.a` 的最终链接和新网关实机运动验收；这些项目在[验收清单](go2-control-acceptance-checklist.md)中明确标为暂未验证，不能用 dry-run 结果替代。

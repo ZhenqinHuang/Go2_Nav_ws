@@ -16,6 +16,8 @@
 - [x] 外载 Jetson Ubuntu 20.04 / ROS 2 Foxy / Python 3.8 原生构建通过，网关包测试 `79 passed`。
 - [x] 外载真实 ROS sender 与 C++ dry-run gateway 回环闭环通过：在线、Arm ACK、ARMED、Disarm、LOCKED。
 - [x] 源码已部署到 `/home/nvidia/Go2_Nav_ws`；部署前文件已备份到 `.codex_backups/go2-udp-gateway-20260728-200846`。
+- [x] 外载 `go2-console.service` 已安装并启用；局域网首页、密码登录、会话 Cookie、状态 API 均返回 HTTP 200。
+- [x] 内载离线且 `eth0` 无载波时，控制台仍可通过 `wlan0` 使用，并显示 `gateway_link=offline`、`armed=false`。
 
 当前外载的 `eth0` 和 `eth1` 都无载波，保存的 NetworkManager 配置正确，但内载断电时
 `192.168.123.18` / `192.168.123.161` 会暂时按默认路由查询到 `wlan0`。这不是配置
@@ -59,6 +61,7 @@ ss -lunp | grep 15000
 |---|---|---|---|
 | 外载 Python 3.8 构建与 79 项测试 | 通过 | 2026-07-28 | Codex / 外载现场工作区 |
 | 外载 ROS sender → C++ dry-run 闭环 | 通过 | 2026-07-28 | Arm、ACK、Disarm、LOCKED |
+| 外载 Web 控制台安装和局域网登录 | 通过 | 2026-07-28 | HTTP 200；离线状态正确 |
 | 内载 SDK 构建 | 待测 |  |  |
 | 无运动 Arm / Disarm | 待测 |  |  |
 | 0.5 秒失联保护 | 待测 |  |  |

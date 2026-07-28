@@ -13,6 +13,13 @@
 - [x] C++ 测试覆盖 BalanceStand、ARMING、Move、StopMove、重放、watchdog、Disarm、SDK 错误和二次限速。
 - [x] `go2_cmd_gateway --dry-run` UDP 回环测试覆盖 ACK 关联、坏 CRC 丢弃、0.5 秒失联锁定和旧令牌拒绝。
 - [x] systemd 单元校验和部署 shell 语法检查。
+- [x] 外载 Jetson Ubuntu 20.04 / ROS 2 Foxy / Python 3.8 原生构建通过，网关包测试 `79 passed`。
+- [x] 外载真实 ROS sender 与 C++ dry-run gateway 回环闭环通过：在线、Arm ACK、ARMED、Disarm、LOCKED。
+- [x] 源码已部署到 `/home/nvidia/Go2_Nav_ws`；部署前文件已备份到 `.codex_backups/go2-udp-gateway-20260728-200846`。
+
+当前外载的 `eth0` 和 `eth1` 都无载波，保存的 NetworkManager 配置正确，但内载断电时
+`192.168.123.18` / `192.168.123.161` 会暂时按默认路由查询到 `wlan0`。这不是配置
+回退；内载和网线恢复后必须再次确认这两个目标均由 `eth0` 直连。
 
 ## 内载重新上电后的无运动验收
 
@@ -50,6 +57,8 @@ ss -lunp | grep 15000
 
 | 项目 | 结果 | 时间 | 操作员 / 备注 |
 |---|---|---|---|
+| 外载 Python 3.8 构建与 79 项测试 | 通过 | 2026-07-28 | Codex / 外载现场工作区 |
+| 外载 ROS sender → C++ dry-run 闭环 | 通过 | 2026-07-28 | Arm、ACK、Disarm、LOCKED |
 | 内载 SDK 构建 | 待测 |  |  |
 | 无运动 Arm / Disarm | 待测 |  |  |
 | 0.5 秒失联保护 | 待测 |  |  |

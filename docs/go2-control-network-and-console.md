@@ -199,7 +199,8 @@ Disarm 不要求持有控制租约，只要求已经登录，因此在另一个�
 ip route get 192.168.123.18
 ping -I eth0 -c 3 192.168.123.18
 ss -lunp | grep 1500
-ros2 topic echo /go2_cmd_vel_gateway/status --once
+PYTHONUNBUFFERED=1 timeout 3s \
+  ros2 topic echo /go2_cmd_vel_gateway/status std_msgs/msg/String
 ```
 
 确认外载源端口为 `15001`，内载监听 `15000`，防火墙没有拦截两板之间的 UDP。
@@ -273,4 +274,6 @@ GO2_CONTROL_BACKEND=direct-dds \
 
 ## 8. 当前验证边界
 
-已完成 Python 单元/HTTP/前端契约、Jetson aarch64 C++ 协议与状态机测试、UDP dry-run 集成以及桌面/移动浏览器冒烟验证。内载关机期间无法完成 `/usr/local/lib/libunitree_go2_sdk.a` 的最终链接和新网关实机运动验收；这些项目在[验收清单](go2-control-acceptance-checklist.md)中明确标为暂未验证，不能用 dry-run 结果替代。
+已完成 Python 单元/HTTP/前端契约、Jetson aarch64 C++ 协议与状态机测试、UDP dry-run 集成以及桌面/移动浏览器冒烟验证。2026-07-28 已把源码部署到外载 `/home/nvidia/Go2_Nav_ws`，并在其 Ubuntu 20.04、ROS 2 Foxy、Python 3.8 环境完成 `79 passed`；ROS sender → C++ dry-run gateway 的在线、Arm、ACK、Disarm、LOCKED 闭环也已通过。
+
+外载 Web 服务尚未安装启用，因为 `/etc/go2-console/password.hash` 必须由使用方先设置操作员密码。内载关机期间也无法完成 `/usr/local/lib/libunitree_go2_sdk.a` 的最终链接和新网关实机运动验收；这些项目在[验收清单](go2-control-acceptance-checklist.md)中明确标为暂未验证，不能用 dry-run 结果替代。

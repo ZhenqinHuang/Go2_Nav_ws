@@ -50,18 +50,18 @@ bash ~/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 **指定地图：**
 
 ```bash
-MAP_YAML=/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml \
-bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
+MAP_YAML=/home/nvidia/Go2_Nav_ws/maps/MID360_map.yaml \
+bash /home/nvidia/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 ```
 
 **全参数示例（实机路径）：**
 
 ```bash
-MAP_YAML=/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml \
-FASTLIO_LOC_PCD=/home/unitree/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd \
+MAP_YAML=/home/nvidia/Go2_Nav_ws/maps/MID360_map.yaml \
+FASTLIO_LOC_PCD=/home/nvidia/Go2_Nav_ws/src/Go2_localization/PCD/MID360_localization_filtered.pcd \
 USE_WEB_BRIDGE=true \
 SERVER_URL="ws://your-server:30100/ws/source?token=xxx&source_id=dog_001" \
-bash /home/unitree/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
+bash /home/nvidia/Go2_Nav_ws/src/Go2_bringup/go2_autostart.sh
 ```
 
 **环境变量：**

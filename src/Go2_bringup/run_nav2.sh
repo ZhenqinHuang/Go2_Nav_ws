@@ -56,7 +56,9 @@ fi
 set +u
 source "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 # unitree_api 消息包在 unitree_ros2 工作空间，构建时需要
-if [[ -f "${UNITREE_ROS2_WS}/install/setup.bash" ]]; then
+if [[ -f "${UNITREE_ROS2_WS}/cyclonedds_ws/install/setup.bash" ]]; then
+  source "${UNITREE_ROS2_WS}/cyclonedds_ws/install/setup.bash"
+elif [[ -f "${UNITREE_ROS2_WS}/install/setup.bash" ]]; then
   source "${UNITREE_ROS2_WS}/install/setup.bash"
 else
   echo "[go2_nav2] WARN: ${UNITREE_ROS2_WS}/install/setup.bash 不存在，unitree_api 可能不可用"

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a1017">
+    <title>Go2 控制台</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <p class="eyebrow">UNITREE GO2 · NAVIGATION</p>
+            <h1>机器人控制台</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="clock-value" class="clock">--:--:--</span>
+          <button id="logout-button" class="ghost-button" type="button" aria-label="退出控制台">
+            退出
+          </button>
+        </div>
+      </header>
+
+      <section class="status-strip" aria-label="机器人核心状态">
+        <article class="status-pill">
+          <span class="status-dot" id="gateway-dot"></span>
+          <div>
+            <span class="status-label">网关链路</span>
+            <strong id="gateway-state">离线</strong>
+          </div>
+        </article>
+        <article class="status-pill">
+          <span class="status-dot" id="arm-dot"></span>
+          <div>
+            <span class="status-label">运动授权</span>
+            <strong id="arm-state">LOCKED</strong>
+          </div>
+        </article>
+        <article class="status-pill">
+          <span class="status-dot" id="nav-dot"></span>
+          <div>
+            <span class="status-label">Nav2</span>
+            <strong id="nav-state">IDLE</strong>
+          </div>
+        </article>
+        <article class="status-pill">
+          <span class="status-dot" id="lease-dot"></span>
+          <div>
+            <span class="status-label">控制权</span>
+            <strong id="lease-state">未接管</strong>
+          </div>
+        </article>
+      </section>
+
+      <section class="telemetry-grid" aria-label="机器人参数">
+        <article class="metric-card">
+          <span class="metric-icon" aria-hidden="true">↯</span>
+          <div>
+            <span class="metric-label">电量</span>
+            <strong id="battery-value">--%</strong>
+          </div>
+          <div class="battery-track" aria-hidden="true"><span id="battery-bar"></span></div>
+        </article>
+        <article class="metric-card">
+          <span class="metric-icon" aria-hidden="true">M</span>
+          <div>
+            <span class="metric-label">运动模式</span>
+            <strong id="mode-value">未知</strong>
+          </div>
+        </article>
+        <article class="metric-card metric-wide">
+          <span class="metric-icon" aria-hidden="true">V</span>
+          <div>
+            <span class="metric-label">当前速度</span>
+            <strong id="velocity-value">0.00 m/s · 0.00 rad/s</strong>
+          </div>
+        </article>
+        <article class="metric-card metric-wide">
+          <span class="metric-icon" aria-hidden="true">P</span>
+          <div>
+            <span class="metric-label">里程计位置</span>
+            <strong id="odometry-value">x 0.00 · y 0.00 · θ 0.00</strong>
+          </div>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <article class="panel drive-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">MANUAL DRIVE</p>
+              <h2>手动运动</h2>
+            </div>
+            <span id="manual-lock-note" class="lock-note">需要接管并 Arm</span>
+          </div>
+
+          <div id="manual-control" class="manual-control" aria-label="手动运动控制区">
+            <div class="drive-pad">
+              <button class="drive-button forward" type="button" data-command="forward" aria-label="按住向前移动">
+                <span aria-hidden="true">↑</span><small>前进</small>
+              </button>
+              <button class="drive-button left" type="button" data-command="left" aria-label="按住向左转向">
+                <span aria-hidden="true">↶</span><small>左转</small>
+              </button>
+              <button class="drive-button stop" type="button" data-command="stop" aria-label="立即停止运动">
+                <span aria-hidden="true">■</span><small>停止</small>
+              </button>
+              <button class="drive-button right" type="button" data-command="right" aria-label="按住向右转向">
+                <span aria-hidden="true">↷</span><small>右转</small>
+              </button>
+              <button class="drive-button backward" type="button" data-command="backward" aria-label="按住向后移动">
+                <span aria-hidden="true">↓</span><small>后退</small>
+              </button>
+            </div>
+
+            <div class="speed-controls">
+              <label for="manual-linear-speed">
+                <span>手动线速度</span>
+                <output id="linear-speed-value">0.20 m/s</output>
+              </label>
+              <input id="manual-linear-speed" type="range" min="0.05" max="0.60" step="0.05" value="0.20" aria-label="调整手动前进和后退速度">
+
+              <label for="manual-angular-speed">
+                <span>手动转向速度</span>
+                <output id="angular-speed-value">0.50 rad/s</output>
+              </label>
+              <input id="manual-angular-speed" type="range" min="0.10" max="1.40" step="0.10" value="0.50" aria-label="调整手动转向角速度">
+              <p class="hint">按住按钮或 W/S/A/D 才会运动，松开立即归零。</p>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel action-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">SAFETY &amp; MODE</p>
+              <h2>控制操作</h2>
+            </div>
+          </div>
+
+          <div class="lease-box">
+            <div>
+              <strong>浏览器控制权</strong>
+              <p>同一时间仅允许一个操作端控制。</p>
+            </div>
+            <button id="lease-button" class="secondary-button" type="button" aria-label="接管或释放浏览器控制权">
+              接管控制
+            </button>
+          </div>
+
+          <button id="arm-button" class="arm-button" type="button" aria-label="确认环境安全后开启运动授权">
+            <span class="button-symbol" aria-hidden="true">A</span>
+            <span><strong>ARM</strong><small>开启运动授权</small></span>
+          </button>
+
+          <button id="disarm-button" class="disarm-button" type="button" aria-label="立即关闭运动授权并停止">
+            <span class="button-symbol" aria-hidden="true">!</span>
+            <span><strong>DISARM / STOP</strong><small>始终可用的安全停止</small></span>
+          </button>
+
+          <button id="cancel-nav-button" class="secondary-button cancel-button" type="button" aria-label="取消当前 Nav2 导航任务">
+            取消导航
+          </button>
+
+          <div class="safety-note">
+            <span aria-hidden="true">◆</span>
+            <p>Nav2 活跃时禁止手动控制。请先取消导航，并等待状态变为 IDLE。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <section class="login-card">
+        <div class="login-emblem" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p class="eyebrow">SECURE OPERATOR ACCESS</p>
+        <h2 id="login-title">登录 Go2 控制台</h2>
+        <p class="login-copy">仅限受信任局域网内的授权操作员。</p>
+        <form id="login-form">
+          <label for="username">用户名</label>
+          <input id="username" name="username" type="text" autocomplete="username" value="operator" required aria-label="控制台用户名">
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required aria-label="控制台密码">
+          <p id="login-error" class="form-error" role="alert"></p>
+          <button class="login-button" type="submit" aria-label="登录机器人控制台">登录控制台</button>
+        </form>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

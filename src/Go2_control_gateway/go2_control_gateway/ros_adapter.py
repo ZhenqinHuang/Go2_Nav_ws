@@ -37,6 +37,54 @@ NAV_STATUS_NAMES = {
 }
 
 
+class DemoRosAdapter:
+    """Motion-free adapter for local UI checks and operator training."""
+
+    def __init__(self, *, nav2_status: str = "IDLE") -> None:
+        self._lock = threading.RLock()
+        self._state = {
+            "battery_percent": 78,
+            "armed": False,
+            "gateway_link": "online",
+            "motion_mode": "demo",
+            "velocity": {"vx": 0.0, "vy": 0.0, "vyaw": 0.0},
+            "odometry": {"x": 1.24, "y": -0.38, "yaw": 0.12},
+            "nav2_status": str(nav2_status).upper(),
+        }
+
+    def get_state(self) -> dict:
+        with self._lock:
+            return deepcopy(self._state)
+
+    def arm(self) -> bool:
+        with self._lock:
+            self._state["armed"] = True
+        return True
+
+    def disarm(self) -> bool:
+        with self._lock:
+            self._state["armed"] = False
+            self._state["velocity"] = {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}
+        return True
+
+    def manual_command(self, vx: float, vy: float, vyaw: float) -> bool:
+        with self._lock:
+            self._state["velocity"] = {
+                "vx": float(vx),
+                "vy": float(vy),
+                "vyaw": float(vyaw),
+            }
+        return True
+
+    def cancel_navigation(self) -> bool:
+        with self._lock:
+            self._state["nav2_status"] = "IDLE"
+        return True
+
+    def close(self) -> None:
+        self.disarm()
+
+
 class RclpyRosAdapter:
     """Owns a small ROS node and exposes fixed synchronous operations."""
 

@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 import inspect
 import json
+import os
 from pathlib import Path
 import time
 from typing import Callable, Optional
@@ -345,7 +346,7 @@ def create_app(
         if web_dir is None:
             raise web.HTTPNotFound()
         filename = request.match_info["filename"]
-        if filename not in {"app.css", "app.js"}:
+        if filename not in {"app.css", "app.js", "favicon.svg"}:
             raise web.HTTPNotFound()
         path = Path(web_dir) / filename
         if not path.is_file():
@@ -363,7 +364,9 @@ def create_app(
     app.router.add_post("/api/navigation/cancel", cancel_navigation)
     app.router.add_get("/ws/state", websocket_state)
     app.router.add_get("/", index)
-    app.router.add_get("/{filename:app\\.(?:css|js)}", static_asset)
+    app.router.add_get(
+        "/{filename:(?:app\\.(?:css|js)|favicon\\.svg)}", static_asset
+    )
 
     async def watchdog_context(_app):
         async def run():
@@ -385,31 +388,54 @@ def create_app(
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="Go2 authenticated LAN console")
-    parser.add_argument("--bind", default="192.168.0.101")
+    parser.add_argument("--bind")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="run with a motion-free simulated ROS adapter",
+    )
     parser.add_argument(
         "--password-hash-file",
         default="/etc/go2-console/password.hash",
     )
     arguments = parser.parse_args(argv)
 
-    password_hash = Path(arguments.password_hash_file).read_text(
-        encoding="utf-8"
-    ).strip()
+    if arguments.demo:
+        demo_password = os.environ.get("GO2_CONSOLE_DEMO_PASSWORD")
+        if not demo_password:
+            raise SystemExit(
+                "GO2_CONSOLE_DEMO_PASSWORD is required when --demo is used"
+            )
+        from .console_core import hash_password
+
+        password_hash = hash_password(demo_password)
+    else:
+        password_hash = Path(arguments.password_hash_file).read_text(
+            encoding="utf-8"
+        ).strip()
     policy = ConsolePolicy(
         config=ConsolePolicyConfig(
             username="operator",
             password_hash=password_hash,
         )
     )
-    from .ros_adapter import RclpyRosAdapter
+    if arguments.demo:
+        from .ros_adapter import DemoRosAdapter
 
-    ros_adapter = RclpyRosAdapter()
+        ros_adapter = DemoRosAdapter(
+            nav2_status=os.environ.get("GO2_CONSOLE_DEMO_NAV_STATUS", "IDLE")
+        )
+    else:
+        from .ros_adapter import RclpyRosAdapter
+
+        ros_adapter = RclpyRosAdapter()
+    bind_ip = arguments.bind or ("127.0.0.1" if arguments.demo else "192.168.0.101")
     web_dir = Path(__file__).with_name("web")
     app = create_app(
         policy=policy,
         ros_adapter=ros_adapter,
-        config=ConsoleServerConfig(bind_ip=arguments.bind, port=arguments.port),
+        config=ConsoleServerConfig(bind_ip=bind_ip, port=arguments.port),
         web_dir=web_dir,
     )
 
@@ -417,7 +443,7 @@ def main(argv=None) -> None:
         ros_adapter.close()
 
     app.on_cleanup.append(close_ros)
-    web.run_app(app, host=arguments.bind, port=arguments.port, access_log=None)
+    web.run_app(app, host=bind_ip, port=arguments.port, access_log=None)
 
 
 if __name__ == "__main__":

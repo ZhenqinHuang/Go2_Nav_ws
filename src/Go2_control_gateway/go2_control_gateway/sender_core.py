@@ -5,6 +5,8 @@ selection, arming, and ACK handling in a deterministic core makes the safety
 rules independently testable.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 import math
 import secrets

@@ -1,5 +1,7 @@
 """Versioned binary protocol shared by the external and internal gateways."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 import math

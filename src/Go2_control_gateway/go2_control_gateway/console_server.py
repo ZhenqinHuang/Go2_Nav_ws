@@ -1,5 +1,7 @@
 """Authenticated aiohttp backend for the trusted-LAN Go2 console."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 from collections import defaultdict, deque
@@ -65,7 +67,8 @@ class RateLimiter:
 async def _invoke(method, *args):
     if inspect.iscoroutinefunction(method):
         return await method(*args)
-    result = await asyncio.to_thread(method, *args)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, method, *args)
     if inspect.isawaitable(result):
         return await result
     return result

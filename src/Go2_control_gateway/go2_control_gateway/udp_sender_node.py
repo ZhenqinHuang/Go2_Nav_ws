@@ -1,5 +1,7 @@
 """ROS 2 adapter and UDP transport for the external Go2 command sender."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 import json
 import math

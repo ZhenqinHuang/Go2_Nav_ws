@@ -253,3 +253,12 @@ ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 - [x] `Go2_web_bridge`：云端 WebSocket 桥接（位姿上报 + 目标点下发）
 - [x] 局域网 Web 控制台（rosbridge + Vite 前端）
 - [x] `Go2_time_sync`：PTP 时间同步工具（当前未启用）
+
+## 外载—内载底盘控制
+
+正常控制路径已经调整为“外载 Nav2 / Web → UDP → 内载原生 Unitree SDK → Go2
+下位机”，并加入显式 Arm、0.5 秒失联锁定、旧令牌撤销和认证局域网控制台。
+
+- [网络、接口、控制架构与操作手册](docs/go2-control-network-and-console.md)
+- [实机验收清单](docs/go2-control-acceptance-checklist.md)
+- [控制网关包说明](src/Go2_control_gateway/README.md)

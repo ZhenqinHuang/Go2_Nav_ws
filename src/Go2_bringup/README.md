@@ -274,6 +274,37 @@ bash ~/Go2_Nav_ws/src/Go2_bringup/run_nav2.sh
 
 **Q：Web 控制台无法访问**
 - 确认 rosbridge_websocket 已启动：`ros2 node list | grep rosbridge`
+
+## 新底盘控制网关
+
+正常 Nav2 启动现在默认使用外载—内载 UDP sender：
+
+```bash
+GO2_CONTROL_BACKEND=udp \
+MAP_YAML=/path/to/map.yaml \
+bash run_nav2.sh
+```
+
+人工检查、授权和停止：
+
+```bash
+bash go2_gateway_status.sh
+bash go2_gateway_arm.sh
+bash go2_gateway_disarm.sh
+```
+
+`go2_gateway_disarm.sh` 应在关闭导航、停止服务或关机前执行。原外载直连 DDS
+bridge 只作为诊断回退：
+
+```bash
+GO2_CONTROL_BACKEND=direct-dds \
+MAP_YAML=/path/to/map.yaml \
+bash run_nav2.sh
+```
+
+Web 不再让浏览器直接访问 ROS，而是由认证后端提供固定 API。默认访问地址为
+`http://192.168.0.101:8080`。完整说明见
+[`docs/go2-control-network-and-console.md`](../../docs/go2-control-network-and-console.md)。
 - 检查防火墙是否放行 5173 和 9090 端口
 - 查看日志：`cat /tmp/go2_nav_bringup/rosbridge.log`
 

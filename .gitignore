@@ -2,6 +2,7 @@ build/
 install/
 log/
 .vscode/
+.worktrees/
 __pycache__/
 *.pyc
 *.pyo

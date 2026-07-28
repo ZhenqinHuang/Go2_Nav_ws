@@ -1,0 +1,9 @@
+console:
+  bind_ip: "192.168.0.101"
+  port: 8080
+  username: "operator"
+  password_hash_file: "/etc/go2-console/password.hash"
+  session_idle_timeout_sec: 1800.0
+  session_absolute_timeout_sec: 43200.0
+  control_lease_timeout_sec: 2.0
+  manual_command_timeout_sec: 0.2

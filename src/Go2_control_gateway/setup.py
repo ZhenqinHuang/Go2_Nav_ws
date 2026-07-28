@@ -37,6 +37,8 @@ setup(
     entry_points={
         "console_scripts": [
             "go2_cmd_vel_udp_sender = go2_control_gateway.udp_sender_node:main",
+            "go2_console = go2_control_gateway.console_server:main",
+            "go2_set_console_password = go2_control_gateway.set_console_password:main",
         ]
     },
 )

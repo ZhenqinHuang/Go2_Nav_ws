@@ -2,6 +2,7 @@
  Copyright (c) 2020-2023, Unitree Robotics.Co.Ltd. All rights reserved.
 ***********************************************************************/
 #include "common/ros2_sport_client.h"
+#include "common/sport_request.hpp"
 
 void SportClient::Damp(unitree_api::msg::Request &req) {
   req.header.identity.api_id = ROBOT_SPORT_API_ID_DAMP;
@@ -9,12 +10,12 @@ void SportClient::Damp(unitree_api::msg::Request &req) {
 }
 
 void SportClient::BalanceStand(unitree_api::msg::Request &req) {
-  req.header.identity.api_id = ROBOT_SPORT_API_ID_BALANCESTAND;
+  go2_nav2::prepare_sport_request(req, ROBOT_SPORT_API_ID_BALANCESTAND);
   req_puber_->publish(req);
 }
 
 void SportClient::StopMove(unitree_api::msg::Request &req) {
-  req.header.identity.api_id = ROBOT_SPORT_API_ID_STOPMOVE;
+  go2_nav2::prepare_sport_request(req, ROBOT_SPORT_API_ID_STOPMOVE);
   req_puber_->publish(req);
 }
 
@@ -29,7 +30,7 @@ void SportClient::StandDown(unitree_api::msg::Request &req) {
 }
 
 void SportClient::RecoveryStand(unitree_api::msg::Request &req) {
-  req.header.identity.api_id = ROBOT_SPORT_API_ID_RECOVERYSTAND;
+  go2_nav2::prepare_sport_request(req, ROBOT_SPORT_API_ID_RECOVERYSTAND);
   req_puber_->publish(req);
 }
 
@@ -51,7 +52,7 @@ void SportClient::Move(unitree_api::msg::Request &req, float vx, float vy,
   js["y"] = vy;
   js["z"] = vyaw;
   req.parameter = js.dump();
-  req.header.identity.api_id = ROBOT_SPORT_API_ID_MOVE;
+  go2_nav2::prepare_sport_request(req, ROBOT_SPORT_API_ID_MOVE);
   req_puber_->publish(req);
 }
 

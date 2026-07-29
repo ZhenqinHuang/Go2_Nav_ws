@@ -7,6 +7,21 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(unitree_api REQUIRED)
 
+if(BUILD_TESTING)
+  enable_testing()
+
+  add_executable(sport_request_test
+    test/sport_request_test.cpp
+  )
+  target_include_directories(sport_request_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  ament_target_dependencies(sport_request_test
+    unitree_api
+  )
+  add_test(NAME sport_request_test COMMAND sport_request_test)
+endif()
+
 add_executable(go2_cmd_vel_bridge_node
   src/go2_cmd_vel_bridge.cpp
   src/ros2_sport_client.cpp

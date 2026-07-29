@@ -16,13 +16,13 @@ go2_cmd_vel_bridge:
     cmd_timeout_sec: 0.6
 
     # 控制循环频率（Hz），建议与 controller_frequency 相近或更高
-    publish_rate_hz: 50.0
+    publish_rate_hz: 10.0
 
-    # 收到非零 cmd_vel 时自动发送 StandUp 指令（导航前机器人需处于站立状态）
+    # 收到非零 cmd_vel 时自动发送 RecoveryStand 指令（进入可运动站立状态）
     stand_up_on_motion: true
-    # StandUp 后等待稳定的时间（s），稳定后再开始移动
+    # RecoveryStand 后等待稳定的时间（s），稳定后再开始移动
     stand_up_settle_sec: 0.6
-    # 启动时立即发送 StandUp（false = 等到有运动指令时再站起）
+    # 启动时立即发送 RecoveryStand（false = 等到有运动指令时再站起）
     auto_stand_up: false
 
     # 定位健康保护：仅 Nav2 bridge 默认启用；键盘遥控通过 ros2 run 启动时默认不启用

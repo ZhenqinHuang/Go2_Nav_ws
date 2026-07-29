@@ -142,10 +142,10 @@ Go2_nav2/
 | **速度限幅** | `max_vx = 0.60 m/s`，`max_vy = 0.0`（Go2 不支持横向移动），`max_vyaw = 1.4 rad/s` |
 | **超时停车** | 超过 0.6 s 未收到 `/cmd_vel` 则发送零速（防止失控） |
 | **死区过滤** | `|v| < 0.03 m/s` 视为零速，避免微小抖动驱动机器人 |
-| **自动站立** | 收到非零运动指令时自动发送 StandUp，稳定 0.6 s 后开始移动 |
+| **自动站立** | 收到非零运动指令时自动发送 RecoveryStand，稳定 0.6 s 后开始移动 |
 | **角速度平滑** | EMA 滤波（α=0.85），过滤角速度尖峰，保持行走平稳 |
 | **定位保护** | `/map_to_odom` 超过 1.5 s 未更新则暂停运动，ICP 大幅修正时暂停 0.8 s |
-| **控制频率** | 50 Hz 发布 Sport API 指令，与 Nav2 20 Hz 解耦 |
+| **控制频率** | 10 Hz 发布 Sport API 指令，与 Nav2 控制循环解耦 |
 
 ### cmd_vel_bridge_params.yaml 参数一览
 
@@ -156,7 +156,7 @@ Go2_nav2/
 | `max_vyaw` | 1.4 rad/s | 最大角速度 |
 | `motion_deadband` | 0.03 | 速度死区阈值 |
 | `cmd_timeout_sec` | 0.6 s | cmd_vel 超时停车时间 |
-| `publish_rate_hz` | 50.0 Hz | Sport API 指令发布频率 |
+| `publish_rate_hz` | 10.0 Hz | Sport API 指令发布频率 |
 | `stand_up_on_motion` | true | 收到运动指令时自动站立 |
 | `stand_up_settle_sec` | 0.6 s | 站立稳定等待时间 |
 | `auto_stand_up` | false | 启动时立即站立 |

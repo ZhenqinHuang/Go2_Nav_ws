@@ -21,7 +21,7 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
     // 即使 yaml 加载失败或参数名拼错，也不会让狗扭腰乱走
     max_vy_ = this->declare_parameter<double>("max_vy", 0.0);
     max_vyaw_ = this->declare_parameter<double>("max_vyaw", 1.0);
-    publish_rate_hz_ = this->declare_parameter<double>("publish_rate_hz", 50.0);
+    publish_rate_hz_ = this->declare_parameter<double>("publish_rate_hz", 10.0);
     cmd_timeout_sec_ = this->declare_parameter<double>("cmd_timeout_sec", 0.35);
     auto_stand_up_ = this->declare_parameter<bool>("auto_stand_up", false);
     stand_up_on_motion_ =
@@ -65,7 +65,7 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
 
     if (auto_stand_up_) {
       unitree_api::msg::Request req;
-      sport_client_.StandUp(req);
+      sport_client_.RecoveryStand(req);
       stand_up_last_time_ = this->now();
       stand_up_issued_ = true;
     }
@@ -195,11 +195,11 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
                                 (std::fabs(target_vyaw_) > 0.0);
 
     if (stand_up_on_motion_ && has_motion_cmd && !stand_up_issued_) {
-      sport_client_.StandUp(req);
+      sport_client_.RecoveryStand(req);
       stand_up_last_time_ = this->now();
       stand_up_issued_ = true;
       RCLCPP_INFO(this->get_logger(),
-                  "non-zero cmd_vel detected, send StandUp before moving");
+                  "non-zero cmd_vel detected, send RecoveryStand before moving");
       return;
     }
 
@@ -248,7 +248,7 @@ class Go2CmdVelBridgeNode : public rclcpp::Node {
   double max_vx_{0.6};
   double max_vy_{0.0};
   double max_vyaw_{1.0};
-  double publish_rate_hz_{50.0};
+  double publish_rate_hz_{10.0};
   double cmd_timeout_sec_{0.35};
   bool auto_stand_up_{false};
   bool stand_up_on_motion_{true};

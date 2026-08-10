@@ -2,19 +2,17 @@
 Description=Go2 时间同步服务（NTP 本机校准 + PTP Master 从机同步）
 # 等待网络完全就绪（NTP 校准需要访问互联网）
 After=network-online.target time-sync.target
-Wants=network-online.target
+Wants=network-online.target time-sync.target
 
 [Service]
 Type=simple
 # 修改为实际的 Python 路径和脚本路径
-ExecStart=/usr/bin/python3 /home/unitree/Go2_Nav_ws/src/Go2_time_sync/scripts/start_ptp_sync.py \
-    --config /home/unitree/Go2_Nav_ws/src/Go2_time_sync/config/ptp_sync.yaml
+ExecStart=/usr/bin/python3 /home/nvidia/Go2_Nav_ws/src/Go2_time_sync/scripts/start_ptp_sync.py \
+    --config /home/nvidia/Go2_Nav_ws/src/Go2_time_sync/config/ptp_sync.yaml
 Restart=on-failure
 RestartSec=10
 # ptp4l / 系统时钟修改需要 root 权限
 User=root
-# 预留网络稳定时间，确保 NTP 查询成功
-ExecStartPre=/bin/sleep 5
 
 [Install]
 WantedBy=multi-user.target

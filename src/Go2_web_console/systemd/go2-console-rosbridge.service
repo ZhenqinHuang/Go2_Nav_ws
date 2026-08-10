@@ -1,13 +1,13 @@
 [Unit]
 Description=Go2 loopback-only rosbridge for authenticated visualization proxy
-After=network-online.target
-Wants=network-online.target
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 
 [Service]
 Type=simple
 User=nvidia
 Group=nvidia
-WorkingDirectory=/home/nvidia/go2_web_console
+WorkingDirectory=/home/nvidia/Go2_Nav_ws
 Environment=ROS_DISTRO=foxy
 Environment=PYTHONUNBUFFERED=1
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

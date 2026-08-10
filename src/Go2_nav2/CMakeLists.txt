@@ -5,23 +5,25 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(unitree_api REQUIRED)
+option(GO2_BUILD_DIRECT_DDS_BRIDGE OFF)
 
-add_executable(go2_cmd_vel_bridge_node
-  src/go2_cmd_vel_bridge.cpp
-  src/ros2_sport_client.cpp
-)
-
-target_include_directories(go2_cmd_vel_bridge_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-ament_target_dependencies(go2_cmd_vel_bridge_node
-  rclcpp
-  geometry_msgs
-  nav_msgs
-  unitree_api
-)
+if(GO2_BUILD_DIRECT_DDS_BRIDGE)
+  find_package(unitree_api REQUIRED)
+  add_executable(go2_cmd_vel_bridge_node
+    src/go2_cmd_vel_bridge.cpp
+    src/ros2_sport_client.cpp
+  )
+  target_include_directories(go2_cmd_vel_bridge_node PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  ament_target_dependencies(go2_cmd_vel_bridge_node
+    rclcpp
+    geometry_msgs
+    nav_msgs
+    unitree_api
+  )
+  install(TARGETS go2_cmd_vel_bridge_node DESTINATION lib/${PROJECT_NAME})
+endif()
 
 add_executable(go2_cmd_vel_keyboard_node
   src/go2_cmd_vel_keyboard.cpp
@@ -32,7 +34,7 @@ ament_target_dependencies(go2_cmd_vel_keyboard_node
   geometry_msgs
 )
 
-install(TARGETS go2_cmd_vel_bridge_node go2_cmd_vel_keyboard_node
+install(TARGETS go2_cmd_vel_keyboard_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -4,14 +4,14 @@
 # 网络接口配置
 network:
   # 连接 MID360 的网卡名称（根据实际情况修改，如 eth0, enp3s0, eno1 等）
-  interface: "eth0"
+  interface: "eth1"
 
 # MID360 激光雷达配置
 lidar:
   # MID360 的 IP 地址
-  ip: "192.168.123.129"
+  ip: "192.168.1.158"
   # 本机（Master）IP 地址
-  host_ip: "192.168.123.99"
+  host_ip: "192.168.1.5"
 
 # NTP 本机时间校准配置（在启动 PTP 从机同步之前，先将本机时间与网络时间对齐）
 ntp:
@@ -32,7 +32,7 @@ ntp:
   # 校准重试次数（在所有服务器均失败时）
   retry_count: 2
   # 是否在 NTP 校准失败时仍继续启动 PTP（true=继续，false=中止）
-  continue_on_failure: true
+  continue_on_failure: false
 
 # PTP 同步参数
 ptp:

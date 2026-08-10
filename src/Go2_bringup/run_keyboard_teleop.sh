@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 键盘遥控 Go2：键盘 → /cmd_vel → go2_cmd_vel_bridge → Go2 sport API
-# 用途：验证执行层（cmd_vel bridge）是否正常工作
+# 维护模式：键盘 → /cmd_vel → 直连 DDS bridge → Go2 Sport API
+# 正式运行使用 UDP sender；此脚本不能与其同时运行。
 #
 # 前置条件：Go2 已上电并处于运动模式（DDS 可达）
 #
@@ -14,6 +14,15 @@
 
 set -Eeuo pipefail
 
+if [[ "${GO2_ALLOW_DIRECT_DDS:-false}" != "true" ]]; then
+  echo "[keyboard_teleop] blocked: set GO2_ALLOW_DIRECT_DDS=true for explicit maintenance mode" >&2
+  exit 20
+fi
+if systemctl is-active --quiet go2-motion-sender.service; then
+  echo "[keyboard_teleop] blocked: stop go2-motion-sender.service before direct DDS maintenance" >&2
+  exit 20
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GO2_NAV_WS="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
@@ -25,6 +34,7 @@ usage() {
   echo ""
   echo "环境变量:"
   echo "  UNITREE_ROS2_WS   unitree_ros2 工作空间（默认 ~/unitree_ros2）"
+  echo "  GO2_ALLOW_DIRECT_DDS=true   明确启用维护模式（必填）"
   echo "  NAV2_SKIP_BUILD   设为 1 跳过 colcon build"
 }
 
@@ -75,7 +85,8 @@ BRIDGE_PID=$!
 echo "[keyboard_teleop] bridge PID=${BRIDGE_PID}，日志: /tmp/go2_cmd_vel_bridge.log"
 
 # 等 bridge 节点注册到 ROS graph
-sleep 1
+timeout 10 bash -c \
+  'until ros2 node list 2>/dev/null | grep -Fxq /go2_cmd_vel_bridge; do sleep 0.25; done'
 
 echo "[keyboard_teleop] 启动键盘控制（在此终端操作）..."
 exec ros2 run go2_nav2 go2_cmd_vel_keyboard_node \

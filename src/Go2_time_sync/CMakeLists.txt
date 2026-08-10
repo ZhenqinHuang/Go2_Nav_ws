@@ -31,6 +31,7 @@ install(DIRECTORY config/
 install(PROGRAMS
   scripts/start_ptp_sync.py
   scripts/check_ptp_env.py
+  scripts/sync_host_time.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

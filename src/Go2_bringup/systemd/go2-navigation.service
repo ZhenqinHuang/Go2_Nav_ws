@@ -1,0 +1,22 @@
+[Unit]
+Description=Go2 localization and Nav2 stack
+After=network-online.target time-sync.target go2-motion-sender.service
+Wants=network-online.target time-sync.target go2-motion-sender.service
+
+[Service]
+Type=simple
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/Go2_Nav_ws
+Environment=GO2_WORKSPACE=/home/nvidia/Go2_Nav_ws
+Environment=CONTROLLER=dwb
+Environment=RVIZ=false
+ExecStart=/home/nvidia/Go2_Nav_ws/scripts/start_navigation.sh
+ExecStop=/home/nvidia/Go2_Nav_ws/scripts/stop_all.sh
+KillMode=control-group
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Go2 MID360S and FAST-LIO2 mapping stack
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+Conflicts=go2-navigation.service
+
+[Service]
+Type=simple
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/Go2_Nav_ws
+Environment=GO2_WORKSPACE=/home/nvidia/Go2_Nav_ws
+Environment=RVIZ=false
+ExecStart=/home/nvidia/Go2_Nav_ws/scripts/start_mapping.sh
+KillMode=control-group
+TimeoutStopSec=15
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

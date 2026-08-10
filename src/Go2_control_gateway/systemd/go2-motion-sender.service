@@ -1,0 +1,23 @@
+[Unit]
+Description=Go2 external fail-closed UDP motion sender
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/Go2_Nav_ws
+Environment=ROS_DISTRO=foxy
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash -lc 'source /opt/ros/foxy/setup.bash && source /home/nvidia/Go2_Nav_ws/install/setup.bash && exec ros2 launch go2_control_gateway udp_sender.launch.py'
+ExecStop=/bin/kill -TERM $MAINPID
+KillSignal=SIGTERM
+TimeoutStopSec=3
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

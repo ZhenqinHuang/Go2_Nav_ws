@@ -3,15 +3,19 @@
 <package format="3">
   <name>go2_bringup</name>
   <version>0.1.0</version>
-  <description>Go2 一键启动包：Livox MID360 驱动 + FAST-LIO2 + odom TF 桥接 + 点云转激光扫描</description>
+  <description>Ordered bringup and readiness checks for Go2 mapping and navigation</description>
   <maintainer email="wangzheie@example.com">wangzheie</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>livox_ros_driver2</exec_depend>
   <exec_depend>fast_lio</exec_depend>
   <exec_depend>odom_tf_bridge</exec_depend>
+  <exec_depend>fast_lio_localization_ros2</exec_depend>
   <exec_depend>go2_pc2scan</exec_depend>
+  <exec_depend>go2_nav2</exec_depend>
+  <exec_depend>go2_control_gateway</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

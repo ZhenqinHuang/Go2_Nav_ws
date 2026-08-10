@@ -35,6 +35,11 @@ def test_web_repository_depends_on_public_ros_contract_only():
     assert "/go2/manual_cmd_vel" in adapter
     assert "/go2_cmd_vel_gateway/status" in adapter
     assert "/go2_cmd_vel_gateway/emergency_stop" in adapter
+    assert "/go2_cmd_vel_gateway/reset_emergency_stop" in adapter
+    assert "/go2_cmd_vel_gateway/stand_up" in adapter
+    assert "/go2_cmd_vel_gateway/stand_down" in adapter
+    assert "/api/sport/request" not in adapter
+    assert "unitree_api.msg" not in adapter
     assert "15000" not in adapter
     assert "15001" not in adapter
     assert "SportClient" not in adapter
@@ -47,3 +52,12 @@ def test_web_deployment_does_not_manage_motion_service():
     assert "go2-console.service" in install_script
     assert "go2-motion-sender.service" not in install_script
     assert "internal_gateway" not in install_script
+
+
+def test_initial_pose_waits_for_fresh_localization_evidence_not_a_fixed_delay():
+    server = read("go2_web_console/console_server.py")
+    adapter = read("go2_web_console/ros_adapter.py")
+
+    assert "await asyncio.sleep(0.5)" not in server
+    assert "wait_for_localization_update" in server
+    assert "wait_for_localization_update" in adapter

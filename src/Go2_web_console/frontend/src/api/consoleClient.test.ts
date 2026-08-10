@@ -111,7 +111,7 @@ describe('ConsoleClient', () => {
     ).toBe('csrf-speed');
   });
 
-  it('uses fixed posture, recovery and emergency endpoints', async () => {
+  it('uses the normalized posture and emergency gateway endpoints', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ ok: true, csrf_token: 'csrf-pose' }))
@@ -119,17 +119,20 @@ describe('ConsoleClient', () => {
     const client = new ConsoleClient(fetchMock as typeof fetch);
     await client.login('operator', 'secret');
 
-    await client.standUp();
-    await client.standDown();
-    await client.recoveryStand();
+    await client.setPosture('stand');
+    await client.setPosture('lie', true);
     await client.emergencyStop();
+    await client.resetEmergencyStop();
 
     expect(fetchMock.mock.calls.slice(1).map((call) => call[0])).toEqual([
-      '/api/stand-up',
-      '/api/stand-down',
-      '/api/recovery-stand',
-      '/api/emergency-stop',
+      '/api/control/posture',
+      '/api/control/posture',
+      '/api/control/emergency-stop',
+      '/api/control/reset-emergency-stop',
     ]);
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(
+      JSON.stringify({ posture: 'lie', confirm: true }),
+    );
   });
 
   it('uses fixed mapping workflow endpoints with CSRF protection', async () => {
@@ -191,13 +194,38 @@ describe('ConsoleClient', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ ok: true, csrf_token: 'csrf-3' }))
-      .mockResolvedValueOnce(response({ error: 'Nav2 unavailable' }, 503));
+      .mockResolvedValueOnce(
+        response(
+          {
+            ok: false,
+            code: 'nav2_unavailable',
+            message: 'Nav2 unavailable',
+            data: {},
+          },
+          503,
+        ),
+      );
     const client = new ConsoleClient(fetchMock as typeof fetch);
     await client.login('operator', 'secret');
 
     await expect(
       client.navigateToPose({ x: 1, y: 2, yaw: 0 }),
     ).rejects.toThrow('Nav2 unavailable');
+  });
+
+  it('unwraps a normalized response envelope', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        ok: true,
+        code: 'ok',
+        message: '',
+        data: { gateway_link: 'online' },
+      }),
+    );
+
+    const state = await new ConsoleClient(fetchMock as typeof fetch).getState();
+
+    expect(state.gateway_link).toBe('online');
   });
 
   it('creates only same-origin WebSocket URLs', () => {

@@ -27,6 +27,8 @@ interface ManualControlContext {
   leaseHeldByOther?: boolean;
   gatewayLink: 'online' | 'offline';
   controlReady: boolean;
+  localizationReady: boolean;
+  estopLatched: boolean;
   navActive: boolean;
 }
 
@@ -58,8 +60,14 @@ export function manualControlAvailability(
       reason: '运动网关离线，请启动 go2-motion-sender',
     };
   }
+  if (context.estopLatched) {
+    return { enabled: false, reason: '急停已锁存，请检查现场后复位' };
+  }
   if (!context.controlReady) {
     return { enabled: false, reason: '速度通路未就绪，正在等待内载 ACK' };
+  }
+  if (!context.localizationReady) {
+    return { enabled: false, reason: '定位未就绪，禁止运动' };
   }
   if (context.navActive) {
     return { enabled: false, reason: 'Nav2 正在运行，请先取消导航' };

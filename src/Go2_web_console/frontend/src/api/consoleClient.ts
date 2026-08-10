@@ -14,6 +14,13 @@ export interface ConsoleState {
   battery_percent: number | null;
   control_ready: boolean;
   gateway_link: 'online' | 'offline';
+  localization_ready: boolean;
+  active_source: 'idle' | 'manual' | 'nav' | string;
+  estop_latched: boolean;
+  posture: 'standing' | 'lying' | 'unknown' | string;
+  command_pending: boolean;
+  block_reason: string | null;
+  last_ack_age_sec: number | null;
   motion_mode: string;
   velocity: ManualVelocity;
   odometry: Pose2D;
@@ -116,23 +123,19 @@ export class ConsoleClient {
   }
 
   manual(command: ManualVelocity): Promise<void> {
-    return this.mutate('/api/manual', command);
+    return this.mutate('/api/control/manual', command);
   }
 
-  standUp(): Promise<void> {
-    return this.mutate('/api/stand-up');
-  }
-
-  standDown(): Promise<void> {
-    return this.mutate('/api/stand-down');
-  }
-
-  recoveryStand(): Promise<void> {
-    return this.mutate('/api/recovery-stand');
+  setPosture(posture: 'stand' | 'lie', confirm = false): Promise<void> {
+    return this.mutate('/api/control/posture', { posture, confirm });
   }
 
   emergencyStop(): Promise<void> {
-    return this.mutate('/api/emergency-stop');
+    return this.mutate('/api/control/emergency-stop');
+  }
+
+  resetEmergencyStop(): Promise<void> {
+    return this.mutate('/api/control/reset-emergency-stop');
   }
 
   cancelNavigation(): Promise<void> {
@@ -233,14 +236,17 @@ export class ConsoleClient {
       data = {};
     }
     if (!response.ok) {
-      const message =
-        typeof data === 'object' &&
-        data !== null &&
-        'error' in data &&
-        typeof data.error === 'string'
-          ? data.error
-          : `请求失败 (${response.status})`;
+      const message = this.responseMessage(data) ?? `请求失败 (${response.status})`;
       throw new Error(message);
+    }
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'ok' in data &&
+      'code' in data &&
+      'data' in data
+    ) {
+      return data.data as T;
     }
     return data as T;
   }
@@ -255,8 +261,8 @@ export class ConsoleClient {
     if (!response.ok) {
       let message = `请求失败 (${response.status})`;
       try {
-        const data = (await response.json()) as { error?: unknown };
-        if (typeof data.error === 'string') message = data.error;
+        const data = await response.json();
+        message = this.responseMessage(data) ?? message;
       } catch {
         // Keep the status-based fallback for a non-JSON error response.
       }
@@ -268,5 +274,16 @@ export class ConsoleClient {
   private websocketUrl(path: '/ws/state' | '/ws/ros', location: Location): string {
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${scheme}//${location.host}${path}`;
+  }
+
+  private responseMessage(data: unknown): string | null {
+    if (typeof data !== 'object' || data === null) return null;
+    if ('message' in data && typeof data.message === 'string') {
+      return data.message;
+    }
+    if ('error' in data && typeof data.error === 'string') {
+      return data.error;
+    }
+    return null;
   }
 }

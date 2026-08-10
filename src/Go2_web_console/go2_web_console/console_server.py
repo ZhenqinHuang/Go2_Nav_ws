@@ -32,6 +32,31 @@ class CsrfError(PermissionError):
     pass
 
 
+class ControlSafetyError(PermissionError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _api_response(
+    data=None,
+    *,
+    ok: bool = True,
+    code: str = "ok",
+    message: str = "",
+    status: int = 200,
+):
+    return web.json_response(
+        {
+            "ok": bool(ok),
+            "code": str(code),
+            "message": str(message),
+            "data": {} if data is None else data,
+        },
+        status=status,
+    )
+
+
 @dataclass(frozen=True)
 class ConsoleServerConfig:
     bind_ip: str = "192.168.0.101"
@@ -91,31 +116,60 @@ class ConsoleController:
         self._sync_nav_policy(ros_state)
         return {**ros_state, **self.policy.public_state()}
 
-    async def stand_up(self, session_id: str) -> bool:
+    async def posture(self, session_id: str, posture: str) -> bool:
         self.policy.authorize_control_action(session_id)
+        state = await self._motion_state()
+        self._require_motion_ready(state)
+        if self._nav_active(state):
+            raise ControlSafetyError(
+                "navigation_active", "stop navigation before changing posture"
+            )
+        if not self._velocity_zero(state):
+            raise ControlSafetyError(
+                "robot_moving", "robot velocity must be zero before changing posture"
+            )
         await self.force_stop()
-        return bool(await _invoke(self.ros_adapter.stand_up))
-
-    async def stand_down(self, session_id: str) -> bool:
-        self.policy.authorize_control_action(session_id)
-        await self.force_stop()
-        return bool(await _invoke(self.ros_adapter.stand_down))
-
-    async def recovery_stand(self, session_id: str) -> bool:
-        self.policy.authorize_control_action(session_id)
-        await self.force_stop()
-        return bool(await _invoke(self.ros_adapter.recovery_stand))
+        return bool(await _invoke(self.ros_adapter.set_posture, posture))
 
     async def emergency_stop(self, session_id: str) -> bool:
         self.policy.authorize_stop_action(session_id)
         await self.force_stop()
+        try:
+            await _invoke(self.ros_adapter.cancel_navigation)
+        except Exception:
+            pass
+        self.policy.set_nav_active(False)
         return bool(await _invoke(self.ros_adapter.emergency_stop))
+
+    async def reset_emergency_stop(self, session_id: str) -> bool:
+        self.policy.authorize_control_action(session_id)
+        state = await self._motion_state()
+        self._require_gateway_online(state)
+        if not bool(state.get("localization_ready", False)):
+            raise ControlSafetyError(
+                "localization_not_ready", "localization is not ready"
+            )
+        if self._nav_active(state):
+            raise ControlSafetyError(
+                "navigation_active", "stop navigation before resetting emergency stop"
+            )
+        if not self._velocity_zero(state):
+            raise ControlSafetyError(
+                "robot_moving", "robot velocity must be zero before resetting emergency stop"
+            )
+        if not bool(state.get("estop_latched", False)):
+            raise ControlSafetyError(
+                "estop_not_latched", "emergency stop is not latched"
+            )
+        return bool(await _invoke(self.ros_adapter.reset_emergency_stop))
 
     async def manual(
         self, session_id: str, vx: float, vy: float, vyaw: float
     ) -> bool:
         ros_state = await _invoke(self.ros_adapter.get_state)
         self._sync_nav_policy(ros_state)
+        if any(abs(value) > 1e-9 for value in (vx, vy, vyaw)):
+            self._require_motion_ready(ros_state)
         self.policy.submit_manual(session_id, vx, vy, vyaw)
         command = self.policy.current_manual_command()
         result = bool(await _invoke(self.ros_adapter.manual_command, *command))
@@ -123,7 +177,7 @@ class ConsoleController:
         return result
 
     async def cancel_navigation(self, session_id: str) -> bool:
-        self.policy.heartbeat(session_id)
+        self.policy.authorize_stop_action(session_id)
         result = bool(await _invoke(self.ros_adapter.cancel_navigation))
         if result:
             self.policy.set_nav_active(False)
@@ -133,6 +187,7 @@ class ConsoleController:
         self, session_id: str, x: float, y: float, yaw: float
     ) -> bool:
         self.policy.heartbeat(session_id)
+        self._require_motion_ready(await self._motion_state())
         result = bool(
             await _invoke(self.ros_adapter.navigate_to_pose, x, y, yaw)
         )
@@ -144,6 +199,7 @@ class ConsoleController:
         self, session_id: str, poses: list[dict[str, float]]
     ) -> bool:
         self.policy.heartbeat(session_id)
+        self._require_motion_ready(await self._motion_state())
         result = bool(
             await _invoke(self.ros_adapter.navigate_through_poses, poses)
         )
@@ -186,6 +242,42 @@ class ConsoleController:
             value in {"ACCEPTED", "EXECUTING", "CANCELING", "ACTIVE"}
         )
 
+    async def _motion_state(self) -> dict:
+        state = await _invoke(self.ros_adapter.get_state)
+        self._sync_nav_policy(state)
+        return state
+
+    @staticmethod
+    def _require_gateway_online(state: dict) -> None:
+        if str(state.get("gateway_link", "offline")) != "online":
+            raise ControlSafetyError("gateway_offline", "control gateway is offline")
+
+    @classmethod
+    def _require_motion_ready(cls, state: dict) -> None:
+        cls._require_gateway_online(state)
+        if bool(state.get("estop_latched", False)):
+            raise ControlSafetyError("estop_latched", "emergency stop is latched")
+        if not bool(state.get("control_ready", False)):
+            raise ControlSafetyError("control_not_ready", "control gateway is not ready")
+        if not bool(state.get("localization_ready", False)):
+            raise ControlSafetyError(
+                "localization_not_ready", "localization is not ready"
+            )
+
+    @staticmethod
+    def _nav_active(state: dict) -> bool:
+        return bool(state.get("nav_active", False)) or str(
+            state.get("nav2_status", "IDLE")
+        ).upper() in {"ACCEPTED", "EXECUTING", "CANCELING", "ACTIVE"}
+
+    @staticmethod
+    def _velocity_zero(state: dict) -> bool:
+        velocity = state.get("velocity") or {}
+        return all(
+            abs(float(velocity.get(axis, 0.0))) <= 1e-3
+            for axis in ("vx", "vy", "vyaw")
+        )
+
 
 CONSOLE_CONTROLLER_KEY = web.AppKey("console_controller", ConsoleController)
 CONSOLE_POLICY_KEY = web.AppKey("console_policy", ConsolePolicy)
@@ -216,25 +308,51 @@ def create_app(
         try:
             return await handler(request)
         except AuthenticationError as exc:
-            return web.json_response({"error": str(exc)}, status=401)
+            return _api_response(
+                ok=False,
+                code="authentication_required",
+                message=str(exc),
+                status=401,
+            )
         except CsrfError as exc:
-            return web.json_response({"error": str(exc)}, status=403)
+            return _api_response(
+                ok=False, code="csrf_required", message=str(exc), status=403
+            )
+        except ControlSafetyError as exc:
+            return _api_response(
+                ok=False, code=exc.code, message=str(exc), status=409
+            )
         except (
             ControlLeaseError,
             ManualControlError,
             MappingError,
             NavigationError,
         ) as exc:
-            return web.json_response({"error": str(exc)}, status=409)
+            return _api_response(
+                ok=False,
+                code="operation_rejected",
+                message=str(exc),
+                status=409,
+            )
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            return web.json_response({"error": f"invalid request: {exc}"}, status=400)
+            return _api_response(
+                ok=False,
+                code="invalid_request",
+                message=f"invalid request: {exc}",
+                status=400,
+            )
 
     @web.middleware
     async def rate_limit_middleware(request, handler):
         if request.path.startswith("/api/"):
             peer = request.remote or "unknown"
             if not rate_limiter.allow(peer):
-                return web.json_response({"error": "rate limit exceeded"}, status=429)
+                return _api_response(
+                    ok=False,
+                    code="rate_limit_exceeded",
+                    message="rate limit exceeded",
+                    status=429,
+                )
         return await handler(request)
 
     @web.middleware
@@ -304,8 +422,8 @@ def create_app(
             str(data.get("username", "")),
             str(data.get("password", "")),
         )
-        response = web.json_response(
-            {"ok": True, "csrf_token": result.csrf_token}
+        response = _api_response(
+            {"csrf_token": result.csrf_token}, code="login_succeeded"
         )
         response.set_cookie(
             config.cookie_name,
@@ -321,23 +439,23 @@ def create_app(
     async def logout(request):
         session_id = protected_session(request)
         await controller.release(session_id, logout=True)
-        response = web.json_response({"ok": True})
+        response = _api_response(code="logout_succeeded")
         response.del_cookie(config.cookie_name, path="/")
         return response
 
     async def state(request):
         authenticated_session(request)
-        return web.json_response(await controller.state())
+        return _api_response(await controller.state())
 
     async def acquire_control(request):
         session_id = protected_session(request)
         policy.acquire_control(session_id)
-        return web.json_response({"ok": True})
+        return _api_response(code="control_acquired")
 
     async def release_control(request):
         session_id = protected_session(request)
         await controller.release(session_id)
-        return web.json_response({"ok": True})
+        return _api_response(code="control_released")
 
     async def manual(request):
         session_id = protected_session(request)
@@ -348,39 +466,77 @@ def create_app(
             float(data.get("vy", 0.0)),
             float(data.get("vyaw", 0.0)),
         )
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        return _api_response(
+            {"accepted": success},
+            ok=success,
+            code="manual_command_accepted" if success else "gateway_no_ack",
+            message="manual command accepted" if success else "gateway did not acknowledge command",
+            status=200 if success else 503,
+        )
 
     async def cancel_navigation(request):
         session_id = protected_session(request)
         success = await controller.cancel_navigation(session_id)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        return _api_response(
+            {"cancelled": success},
+            ok=success,
+            code="navigation_cancelled" if success else "navigation_cancel_failed",
+            message="navigation cancel requested" if success else "navigation cancel failed",
+            status=200 if success else 503,
+        )
 
-    async def stand_up(request):
+    async def posture(request):
         session_id = protected_session(request)
-        success = await controller.stand_up(session_id)
-        return web.json_response({"ok": success}, status=200 if success else 503)
-
-    async def stand_down(request):
-        session_id = protected_session(request)
-        success = await controller.stand_down(session_id)
-        return web.json_response({"ok": success}, status=200 if success else 503)
-
-    async def recovery_stand(request):
-        session_id = protected_session(request)
-        success = await controller.recovery_stand(session_id)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        data = await parse_json(request)
+        requested = str(data.get("posture", "")).lower()
+        if requested not in {"stand", "lie"}:
+            raise ValueError("posture must be 'stand' or 'lie'")
+        if requested == "lie" and data.get("confirm") is not True:
+            raise ControlSafetyError(
+                "confirmation_required", "lying down requires explicit confirmation"
+            )
+        success = await controller.posture(session_id, requested)
+        return _api_response(
+            {"posture": requested},
+            ok=success,
+            code="posture_acknowledged" if success else "gateway_no_ack",
+            message=f"{requested} command acknowledged" if success else "gateway did not acknowledge posture command",
+            status=200 if success else 503,
+        )
 
     async def emergency_stop(request):
         session_id = protected_session(request)
         success = await controller.emergency_stop(session_id)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        return _api_response(
+            {"estop_latched": success},
+            ok=success,
+            code="emergency_stop_latched" if success else "gateway_no_ack",
+            message="emergency stop latched" if success else "gateway did not acknowledge emergency stop",
+            status=200 if success else 503,
+        )
+
+    async def reset_emergency_stop(request):
+        session_id = protected_session(request)
+        success = await controller.reset_emergency_stop(session_id)
+        return _api_response(
+            {"estop_latched": not success},
+            ok=success,
+            code="emergency_stop_reset" if success else "gateway_no_ack",
+            message="emergency stop reset" if success else "gateway did not acknowledge emergency stop reset",
+            status=200 if success else 503,
+        )
 
     async def navigate_to_pose(request):
         session_id = protected_session(request)
         await _invoke(navigation_manager.require_ready)
         x, y, yaw = parse_pose(await parse_json(request))
         success = await controller.navigate_to_pose(session_id, x, y, yaw)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        return _api_response(
+            {"accepted": success},
+            ok=success,
+            code="navigation_goal_accepted" if success else "navigation_goal_rejected",
+            status=200 if success else 503,
+        )
 
     async def navigate_through_poses(request):
         session_id = protected_session(request)
@@ -396,23 +552,46 @@ def create_app(
             x, y, yaw = parse_pose(raw_pose)
             poses.append({"x": x, "y": y, "yaw": yaw})
         success = await controller.navigate_through_poses(session_id, poses)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+        return _api_response(
+            {"accepted": success},
+            ok=success,
+            code="navigation_waypoints_accepted" if success else "navigation_waypoints_rejected",
+            status=200 if success else 503,
+        )
 
     async def set_initial_pose(request):
         session_id = protected_session(request)
         await _invoke(navigation_manager.require_stack_ready)
         x, y, yaw = parse_pose(await parse_json(request))
+        marker_method = getattr(ros_adapter, "localization_marker", None)
+        marker = await _invoke(marker_method) if marker_method else None
         success = await controller.set_initial_pose(session_id, x, y, yaw)
         if success:
-            # Give the localization node time to consume /initialpose and seed
-            # map->odom before goals become available in the Web UI.
-            await asyncio.sleep(0.5)
-            await _invoke(navigation_manager.mark_localized)
-        return web.json_response({"ok": success}, status=200 if success else 503)
+            wait_method = getattr(
+                ros_adapter, "wait_for_localization_update", None
+            )
+            localized = (
+                bool(await _invoke(wait_method, marker, 2.0))
+                if wait_method
+                else True
+            )
+            if localized:
+                await _invoke(navigation_manager.mark_localized)
+            else:
+                raise ControlSafetyError(
+                    "localization_update_timeout",
+                    "no fresh localization evidence after initial pose",
+                )
+        return _api_response(
+            {"localized": success},
+            ok=success,
+            code="initial_pose_accepted" if success else "initial_pose_rejected",
+            status=200 if success else 503,
+        )
 
     async def mapping_status(request):
         authenticated_session(request)
-        return web.json_response(await _invoke(mapping_manager.status))
+        return _api_response(await _invoke(mapping_manager.status))
 
     async def mapping_start(request):
         protected_session(request)
@@ -423,17 +602,17 @@ def create_app(
         if bool(navigation_state.get("running", False)):
             raise MappingError("定位与 Nav2 正在运行，请先停止导航系统")
         result = await mapping_manager.start(nav_active=False)
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="mapping_started")
 
     async def mapping_stop(request):
         protected_session(request)
         result = await mapping_manager.stop_and_save()
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="mapping_saved")
 
     async def mapping_convert(request):
         protected_session(request)
         result = await mapping_manager.convert_latest()
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="map_bundle_promoted")
 
     async def mapping_map_bundle(request):
         authenticated_session(request)
@@ -450,11 +629,11 @@ def create_app(
 
     async def navigation_system_status(request):
         authenticated_session(request)
-        return web.json_response(await _invoke(navigation_manager.status))
+        return _api_response(await _invoke(navigation_manager.status))
 
     async def navigation_system_speed(request):
         authenticated_session(request)
-        return web.json_response(await _invoke(navigation_manager.speed))
+        return _api_response(await _invoke(navigation_manager.speed))
 
     async def navigation_system_speed_update(request):
         protected_session(request)
@@ -462,7 +641,7 @@ def create_app(
         result = await navigation_manager.set_speed(
             data.get("linear"), data.get("angular")
         )
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="navigation_speed_updated")
 
     async def navigation_system_start(request):
         protected_session(request)
@@ -472,7 +651,7 @@ def create_app(
         data = await parse_json(request)
         map_name = str(data.get("map_name", ""))
         result = await navigation_manager.start(map_name)
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="navigation_system_started")
 
     async def navigation_system_stop(request):
         protected_session(request)
@@ -483,7 +662,7 @@ def create_app(
             # Stopping the owned Nav2 process groups remains the fail-safe path.
             pass
         result = await navigation_manager.stop()
-        return web.json_response({"ok": True, **result})
+        return _api_response(result, code="navigation_system_stopped")
 
     async def websocket_state(request):
         session_id = authenticated_session(request)
@@ -636,11 +815,12 @@ def create_app(
     app.router.add_get("/api/state", state)
     app.router.add_post("/api/control/acquire", acquire_control)
     app.router.add_post("/api/control/release", release_control)
-    app.router.add_post("/api/stand-up", stand_up)
-    app.router.add_post("/api/stand-down", stand_down)
-    app.router.add_post("/api/recovery-stand", recovery_stand)
-    app.router.add_post("/api/emergency-stop", emergency_stop)
-    app.router.add_post("/api/manual", manual)
+    app.router.add_post("/api/control/manual", manual)
+    app.router.add_post("/api/control/posture", posture)
+    app.router.add_post("/api/control/emergency-stop", emergency_stop)
+    app.router.add_post(
+        "/api/control/reset-emergency-stop", reset_emergency_stop
+    )
     app.router.add_post("/api/navigation/cancel", cancel_navigation)
     app.router.add_post("/api/navigation/goal", navigate_to_pose)
     app.router.add_post("/api/navigation/waypoints", navigate_through_poses)

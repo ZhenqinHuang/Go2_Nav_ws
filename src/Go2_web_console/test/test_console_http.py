@@ -42,6 +42,11 @@ class FakeRosAdapter:
             "velocity": {"vx": 0.0, "vy": 0.0, "vyaw": 0.0},
             "odometry": {"x": 1.0, "y": 2.0, "yaw": 0.3},
             "nav2_status": "IDLE",
+            "localization_ready": True,
+            "active_source": "idle",
+            "estop_latched": False,
+            "posture": "unknown",
+            "block_reason": None,
         }
         self.calls = []
 
@@ -62,6 +67,17 @@ class FakeRosAdapter:
 
     async def emergency_stop(self):
         self.calls.append(("emergency_stop",))
+        self.state_data["estop_latched"] = True
+        return True
+
+    async def reset_emergency_stop(self):
+        self.calls.append(("reset_emergency_stop",))
+        self.state_data["estop_latched"] = False
+        return True
+
+    async def set_posture(self, posture):
+        self.calls.append(("set_posture", posture))
+        self.state_data["posture"] = "standing" if posture == "stand" else "lying"
         return True
 
     async def manual_command(self, vx, vy, vyaw):
@@ -284,6 +300,8 @@ async def login(client, *, username="operator", password="test-password-123"):
         json={"username": username, "password": password},
     )
     data = await response.json()
+    if response.status < 400 and set(data) == {"ok", "code", "message", "data"}:
+        return response, data["data"]
     return response, data
 
 
@@ -323,7 +341,12 @@ async def test_login_is_generic_and_sets_http_only_strict_cookie():
         bad_user, bad_user_data = await login(client, username="wrong")
         bad_password, bad_password_data = await login(client, password="wrong")
         assert bad_user.status == bad_password.status == 401
-        assert bad_user_data == bad_password_data == {"error": "invalid credentials"}
+        assert bad_user_data == bad_password_data == {
+            "ok": False,
+            "code": "authentication_required",
+            "message": "invalid credentials",
+            "data": {},
+        }
 
         response, data = await login(client)
         cookie = response.headers["Set-Cookie"]
@@ -396,28 +419,125 @@ async def test_arm_endpoints_are_removed_and_cancel_navigation_remains():
 
 
 @async_test
-async def test_posture_and_emergency_endpoints_are_fixed_ros_actions():
+async def test_normalized_control_api_uses_gateway_services_and_removes_recovery():
     module = load_server()
     app, ros, _clock = make_app(module)
     async with TestClient(TestServer(app), cookie_jar=CookieJar(unsafe=True)) as client:
-        _, data = await login(client)
-        headers = {"X-CSRF-Token": data["csrf_token"]}
+        _, login_data = await login(client)
+        headers = {"X-CSRF-Token": login_data["csrf_token"]}
         await client.post("/api/control/acquire", headers=headers)
 
-        assert (await client.post("/api/stand-up", headers=headers)).status == 200
-        assert (await client.post("/api/stand-down", headers=headers)).status == 200
-        assert (
-            await client.post("/api/recovery-stand", headers=headers)
-        ).status == 200
-        assert (
-            await client.post("/api/emergency-stop", headers=headers)
-        ).status == 200
-        assert [call[0] for call in ros.calls if call[0] != "manual"] == [
-            "stand_up",
-            "stand_down",
-            "recovery_stand",
-            "emergency_stop",
+        stand = await client.post(
+            "/api/control/posture", headers=headers, json={"posture": "stand"}
+        )
+        lie = await client.post(
+            "/api/control/posture",
+            headers=headers,
+            json={"posture": "lie", "confirm": True},
+        )
+        emergency = await client.post(
+            "/api/control/emergency-stop", headers=headers
+        )
+
+        assert stand.status == lie.status == emergency.status == 200
+        assert set((await stand.json())) == {"ok", "code", "message", "data"}
+        assert [call for call in ros.calls if call[0] != "manual"][-4:] == [
+            ("set_posture", "stand"),
+            ("set_posture", "lie"),
+            ("cancel_navigation",),
+            ("emergency_stop",),
         ]
+        for removed in (
+            "/api/stand-up",
+            "/api/stand-down",
+            "/api/recovery-stand",
+            "/api/emergency-stop",
+            "/api/manual",
+        ):
+            assert (await client.post(removed, headers=headers)).status == 405
+
+
+@async_test
+async def test_emergency_stop_and_navigation_cancel_need_auth_but_not_control_lease():
+    module = load_server()
+    app, ros, _clock = make_app(module)
+    async with TestClient(TestServer(app), cookie_jar=CookieJar(unsafe=True)) as client:
+        _, login_data = await login(client)
+        headers = {"X-CSRF-Token": login_data["csrf_token"]}
+
+        stopped = await client.post(
+            "/api/control/emergency-stop", headers=headers
+        )
+        canceled = await client.post("/api/navigation/cancel", headers=headers)
+
+        assert stopped.status == canceled.status == 200
+        assert ("emergency_stop",) in ros.calls
+        assert ("cancel_navigation",) in ros.calls
+
+
+@async_test
+async def test_server_rejects_motion_when_gateway_or_localization_is_not_ready():
+    module = load_server()
+    app, ros, _clock = make_app(module)
+    async with TestClient(TestServer(app), cookie_jar=CookieJar(unsafe=True)) as client:
+        _, login_data = await login(client)
+        headers = {"X-CSRF-Token": login_data["csrf_token"]}
+        await client.post("/api/control/acquire", headers=headers)
+
+        cases = (
+            ("gateway_link", "offline", "gateway_offline"),
+            ("control_ready", False, "control_not_ready"),
+            ("localization_ready", False, "localization_not_ready"),
+            ("estop_latched", True, "estop_latched"),
+        )
+        for field, value, expected_code in cases:
+            ros.state_data.update(
+                gateway_link="online",
+                control_ready=True,
+                localization_ready=True,
+                estop_latched=False,
+                block_reason=None,
+            )
+            ros.state_data[field] = value
+            response = await client.post(
+                "/api/control/manual",
+                headers=headers,
+                json={"vx": 0.1, "vy": 0.0, "vyaw": 0.0},
+            )
+            body = await response.json()
+            assert response.status == 409
+            assert body["ok"] is False
+            assert body["code"] == expected_code
+
+
+@async_test
+async def test_lie_requires_confirmation_and_estop_reset_has_server_gates():
+    module = load_server()
+    app, ros, _clock = make_app(module)
+    async with TestClient(TestServer(app), cookie_jar=CookieJar(unsafe=True)) as client:
+        _, login_data = await login(client)
+        headers = {"X-CSRF-Token": login_data["csrf_token"]}
+        await client.post("/api/control/acquire", headers=headers)
+
+        unconfirmed = await client.post(
+            "/api/control/posture", headers=headers, json={"posture": "lie"}
+        )
+        assert unconfirmed.status == 409
+        assert (await unconfirmed.json())["code"] == "confirmation_required"
+
+        ros.state_data["estop_latched"] = True
+        ros.state_data["nav2_status"] = "EXECUTING"
+        blocked = await client.post(
+            "/api/control/reset-emergency-stop", headers=headers
+        )
+        assert blocked.status == 409
+
+        ros.state_data["nav2_status"] = "IDLE"
+        reset = await client.post(
+            "/api/control/reset-emergency-stop", headers=headers
+        )
+        assert reset.status == 200
+        assert ros.calls[-1] == ("reset_emergency_stop",)
 
 
 @async_test
@@ -431,7 +551,7 @@ async def test_nav2_active_rejects_manual_and_browser_timeout_sends_zero():
         ros.state_data["nav2_status"] = "EXECUTING"
 
         blocked = await client.post(
-            "/api/manual",
+            "/api/control/manual",
             headers=headers,
             json={"vx": 0.2, "vy": 0.0, "vyaw": 0.0},
         )
@@ -439,7 +559,7 @@ async def test_nav2_active_rejects_manual_and_browser_timeout_sends_zero():
 
         ros.state_data["nav2_status"] = "IDLE"
         moving = await client.post(
-            "/api/manual",
+            "/api/control/manual",
             headers=headers,
             json={"vx": 0.2, "vy": 0.0, "vyaw": 0.1},
         )
@@ -484,7 +604,7 @@ async def test_mapping_status_requires_login_and_actions_do_not_require_motion_l
         _, data = await login(client)
         status = await client.get("/api/mapping/status")
         assert status.status == 200
-        assert (await status.json())["lidar_running"] is True
+        assert (await status.json())["data"]["lidar_running"] is True
 
         assert (await client.post("/api/mapping/start")).status == 403
         headers = {"X-CSRF-Token": data["csrf_token"]}
@@ -527,7 +647,7 @@ async def test_navigation_system_status_start_and_stop_use_fixed_api():
         _, data = await login(client)
         status = await client.get("/api/navigation/system/status")
         assert status.status == 200
-        assert (await status.json())["available_maps"][0]["pcd_name"].endswith(
+        assert (await status.json())["data"]["available_maps"][0]["pcd_name"].endswith(
             ".pcd"
         )
 
@@ -562,7 +682,7 @@ async def test_navigation_speed_uses_authenticated_fixed_api_and_csrf():
 
         response = await client.get("/api/navigation/system/speed")
         assert response.status == 200
-        assert (await response.json())["linear"] == 0.25
+        assert (await response.json())["data"]["linear"] == 0.25
 
         payload = {"linear": 0.10, "angular": 0.25}
         assert (
@@ -574,8 +694,7 @@ async def test_navigation_speed_uses_authenticated_fixed_api_and_csrf():
             json=payload,
         )
         assert response.status == 200
-        assert await response.json() == {
-            "ok": True,
+        assert (await response.json())["data"] == {
             "linear": 0.10,
             "angular": 0.25,
             "limits": navigation.state["speed"]["limits"],
@@ -603,7 +722,7 @@ async def test_navigation_system_refuses_mapping_and_goal_reports_readiness():
             json={"map_name": map_name},
         )
         assert response.status == 409
-        assert "正在建图" in (await response.json())["error"]
+        assert "正在建图" in (await response.json())["message"]
         assert navigation.calls == []
 
         await client.post("/api/control/acquire", headers=headers)
@@ -613,7 +732,7 @@ async def test_navigation_system_refuses_mapping_and_goal_reports_readiness():
             json={"x": 1.0, "y": 2.0, "yaw": 0.0},
         )
         assert goal.status == 409
-        assert "/navigate_to_pose" in (await goal.json())["error"]
+        assert "/navigate_to_pose" in (await goal.json())["message"]
 
 
 @async_test
@@ -630,7 +749,7 @@ async def test_mapping_start_refuses_running_navigation_system():
         headers = {"X-CSRF-Token": data["csrf_token"]}
         response = await client.post("/api/mapping/start", headers=headers)
         assert response.status == 409
-        assert "Nav2 正在运行" in (await response.json())["error"]
+        assert "Nav2 正在运行" in (await response.json())["message"]
         assert mapping.calls == []
 
 

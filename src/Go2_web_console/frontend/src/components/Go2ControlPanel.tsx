@@ -54,8 +54,6 @@ export function Go2ControlPanel({
   const manualTimerRef = useRef<number | null>(null);
   const activeCommandRef = useRef<ManualCommand>('stop');
   const activeKeyRef = useRef<string | null>(null);
-  const nextPostureRef = useRef<'stand' | 'lie'>('lie');
-
   const navActive = Boolean(state?.nav_active) || isNavActive(state?.nav2_status ?? 'IDLE');
   const availability = manualControlAvailability({
     hasState: state !== null,
@@ -63,6 +61,8 @@ export function Go2ControlPanel({
     leaseHeldByOther: Boolean(state?.control_lease_held) && !hasLease,
     gatewayLink: state?.gateway_link ?? 'offline',
     controlReady: Boolean(state?.control_ready),
+    localizationReady: Boolean(state?.localization_ready),
+    estopLatched: Boolean(state?.estop_latched),
     navActive,
   });
   const manualReady = availability.enabled;
@@ -212,42 +212,34 @@ export function Go2ControlPanel({
     void stopManual();
   }, [manualReady, onWebManualEnabledChange, stopManual, webManualEnabled]);
 
-  const togglePosture = useCallback(async () => {
-    if (!manualEnabled) {
-      toast.info('请先接管控制并打开 Web 手动控制');
+  const setPosture = useCallback(async (posture: 'stand' | 'lie') => {
+    if (!manualReady) {
+      toast.info(availability.reason);
       return;
     }
-    const next = nextPostureRef.current;
+    if (posture === 'lie' && !window.confirm('确认让机器狗趴下吗？')) return;
     try {
       await stopManual();
-      if (next === 'lie') {
-        await client.standDown();
-        nextPostureRef.current = 'stand';
-        toast.success('已发送卧倒指令');
-      } else {
-        await client.standUp();
-        nextPostureRef.current = 'lie';
-        toast.success('已发送站立指令');
-      }
+      await client.setPosture(posture, posture === 'lie');
+      toast.success(posture === 'stand' ? '站立指令已确认' : '趴下指令已确认');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '姿态切换失败');
+      toast.error(error instanceof Error ? error.message : '姿态指令失败');
     }
-  }, [client, manualEnabled, stopManual]);
+  }, [availability.reason, client, manualReady, stopManual]);
 
-  const recoveryStand = useCallback(async () => {
-    if (!manualEnabled) {
-      toast.info('请先接管控制并打开 Web 手动控制');
+  const resetEmergencyStop = useCallback(async () => {
+    if (!hasLease) {
+      toast.info('请先接管控制，再复位急停');
       return;
     }
     try {
       await stopManual();
-      await client.recoveryStand();
-      nextPostureRef.current = 'lie';
-      toast.success('已发送复位站立指令');
+      await client.resetEmergencyStop();
+      toast.success('急停已复位');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '复位失败');
+      toast.error(error instanceof Error ? error.message : '急停复位失败');
     }
-  }, [client, manualEnabled, stopManual]);
+  }, [client, hasLease, stopManual]);
 
   const emergencyStop = useCallback(async () => {
     onWebManualEnabledChange(false);
@@ -287,16 +279,6 @@ export function Go2ControlPanel({
         void emergencyStop();
         return;
       }
-      if (key === 'f') {
-        event.preventDefault();
-        void togglePosture();
-        return;
-      }
-      if (key === 'p') {
-        event.preventDefault();
-        void recoveryStand();
-        return;
-      }
       const command = keyMap[key];
       if (command) {
         event.preventDefault();
@@ -325,7 +307,7 @@ export function Go2ControlPanel({
       document.removeEventListener('visibilitychange', visibility);
       void stopManual();
     };
-  }, [beginManual, emergencyStop, recoveryStand, stopManual, togglePosture]);
+  }, [beginManual, emergencyStop, stopManual]);
 
   const action = async (work: () => Promise<void>, success: string) => {
     try {
@@ -404,13 +386,19 @@ export function Go2ControlPanel({
         <div className="go2-status-grid">
         <Status label="网关" value={state?.gateway_link ?? '连接中'} good={state?.gateway_link === 'online'} />
         <Status label="速度通路" value={state?.control_ready ? '就绪' : '未就绪'} good={Boolean(state?.control_ready)} />
+        <Status label="定位" value={state?.localization_ready ? '就绪' : '未就绪'} good={Boolean(state?.localization_ready)} />
         <Status label="Nav2" value={state?.nav2_status ?? '未知'} good={!navActive} />
+        <Status label="急停" value={state?.estop_latched ? '已锁存' : '正常'} good={!state?.estop_latched} />
+        <Status label="指令" value={state?.command_pending ? '等待 ACK' : '空闲'} good={!state?.command_pending} />
         <Status label="控制权" value={hasLease ? '本机持有' : state?.control_lease_held ? '其他页面持有' : '未接管'} good={hasLease} />
         </div>
 
         <section className="go2-telemetry">
         <div><span>电量</span><strong>{state?.battery_percent == null ? '—' : `${state.battery_percent}%`}</strong></div>
         <div><span>运动模式</span><strong>{state?.motion_mode ?? '未知'}</strong></div>
+        <div><span>姿态</span><strong>{state?.posture ?? '未知'}</strong></div>
+        <div><span>控制来源</span><strong>{state?.active_source ?? 'idle'}</strong></div>
+        <div><span>阻塞原因</span><strong>{state?.block_reason ?? '无'}</strong></div>
         <div><span>当前速度</span><strong>{velocity.vx.toFixed(2)} / {velocity.vyaw.toFixed(2)}</strong></div>
         <div><span>里程计</span><strong>{pose.x.toFixed(2)}, {pose.y.toFixed(2)}, {pose.yaw.toFixed(2)}</strong></div>
         </section>
@@ -424,7 +412,7 @@ export function Go2ControlPanel({
         {navActive && (
           <div className="go2-nav-lock">
           Nav2 正在运行，手动控制已锁定。
-          <button disabled={!hasLease} onClick={() => void action(() => client.cancelNavigation(), '已请求取消导航')}>
+          <button onClick={() => void action(() => client.cancelNavigation(), '已请求取消导航')}>
             取消导航
           </button>
           </div>
@@ -433,7 +421,7 @@ export function Go2ControlPanel({
         <section className="go2-shape-control">
         <div className="go2-section-title">
           <strong>造型控制</strong>
-          <span>F 切换姿态 · P 复位</span>
+          <span>离散动作等待网关 ACK</span>
         </div>
         <label className="go2-manual-switch">
           <span>
@@ -453,8 +441,9 @@ export function Go2ControlPanel({
           />
         </label>
         <div className="go2-posture-actions">
-          <button disabled={!manualEnabled} onClick={() => void togglePosture()}>F · 站立 / 卧倒</button>
-          <button disabled={!manualEnabled} onClick={() => void recoveryStand()}>P · 复位站立</button>
+          <button disabled={!manualReady} onClick={() => void setPosture('stand')}>站立</button>
+          <button disabled={!manualReady} onClick={() => void setPosture('lie')}>趴下</button>
+          <button disabled={!hasLease || !state?.estop_latched || navActive} onClick={() => void resetEmergencyStop()}>复位急停</button>
           <button className="danger" onClick={() => void emergencyStop()}>空格 · 急停</button>
         </div>
         </section>

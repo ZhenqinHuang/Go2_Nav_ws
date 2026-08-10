@@ -56,6 +56,8 @@ describe('controlPolicy', () => {
         hasLease: false,
         gatewayLink: 'offline',
         controlReady: false,
+        localizationReady: true,
+        estopLatched: false,
         navActive: false,
       }),
     ).toEqual({
@@ -69,6 +71,8 @@ describe('controlPolicy', () => {
         hasLease: false,
         gatewayLink: 'online',
         controlReady: true,
+        localizationReady: true,
+        estopLatched: false,
         navActive: false,
       }),
     ).toEqual({
@@ -82,11 +86,32 @@ describe('controlPolicy', () => {
         hasLease: true,
         gatewayLink: 'online',
         controlReady: true,
+        localizationReady: true,
+        estopLatched: false,
         navActive: false,
       }),
     ).toEqual({
       enabled: true,
       reason: '按住运动，松开停车',
     });
+  });
+
+  it('names localization and emergency-stop lockouts explicitly', () => {
+    const base = {
+      hasState: true,
+      hasLease: true,
+      gatewayLink: 'online' as const,
+      controlReady: true,
+      localizationReady: true,
+      estopLatched: false,
+      navActive: false,
+    };
+
+    expect(
+      manualControlAvailability({ ...base, localizationReady: false }),
+    ).toEqual({ enabled: false, reason: '定位未就绪，禁止运动' });
+    expect(
+      manualControlAvailability({ ...base, estopLatched: true }),
+    ).toEqual({ enabled: false, reason: '急停已锁存，请检查现场后复位' });
   });
 });

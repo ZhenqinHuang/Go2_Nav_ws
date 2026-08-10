@@ -61,10 +61,9 @@ def test_mapping_panel_contains_a_read_only_live_2d_preview():
     for label in (
         "实时 2D 预览",
         "暂停显示",
-        "最低高度",
-        "最高高度",
+        "成图高度",
         "行走轨迹",
-        "此画面仅用于预览",
+        "最终成图还会执行统计去噪",
     ):
         assert label in preview
     assert "sensor_msgs/PointCloud2" in preview
@@ -105,7 +104,7 @@ def test_hold_to_run_has_all_release_and_fail_closed_paths():
     assert "manualEnabled" in panel
 
 
-def test_keyboard_control_has_explicit_safety_switch_and_fixed_shortcuts():
+def test_keyboard_control_has_explicit_safety_switch_and_only_motion_shortcuts():
     panel = source("components/Go2ControlPanel.tsx")
 
     assert "Web 手动控制" in panel
@@ -113,9 +112,9 @@ def test_keyboard_control_has_explicit_safety_switch_and_fixed_shortcuts():
     for key in ("q:", "w:", "e:", "a:", "s:", "d:"):
         assert key in panel
     assert "event.code === 'Space'" in panel
-    assert "key === 'f'" in panel
-    assert "key === 'p'" in panel
-    assert "recoveryStand" in panel
+    assert "key === 'f'" not in panel
+    assert "key === 'p'" not in panel
+    assert "recoveryStand" not in panel
 
 
 def test_manual_press_is_not_delayed_by_a_zero_command_round_trip():
@@ -178,11 +177,10 @@ def test_control_operations_use_only_fixed_same_origin_api():
     for endpoint in (
         "/api/login",
         "/api/control/acquire",
-        "/api/manual",
-        "/api/stand-up",
-        "/api/stand-down",
-        "/api/recovery-stand",
-        "/api/emergency-stop",
+        "/api/control/manual",
+        "/api/control/posture",
+        "/api/control/emergency-stop",
+        "/api/control/reset-emergency-stop",
         "/api/navigation/goal",
         "/api/navigation/waypoints",
         "/api/navigation/cancel",
@@ -197,6 +195,7 @@ def test_control_operations_use_only_fixed_same_origin_api():
         assert endpoint in client
     assert "/api/arm" not in client
     assert "/api/disarm" not in client
+    assert "/api/recovery-stand" not in client
     assert ".publish(" not in combined
     assert ".advertise(" not in combined
     assert "callService(" not in combined
@@ -212,10 +211,27 @@ def test_manual_http_api_reaches_the_real_ros_velocity_topic():
         encoding="utf-8"
     )
 
-    assert "return this.mutate('/api/manual', command)" in client
-    assert 'app.router.add_post("/api/manual", manual)' in server
+    assert "return this.mutate('/api/control/manual', command)" in client
+    assert 'app.router.add_post("/api/control/manual", manual)' in server
     assert 'Twist, "/go2/manual_cmd_vel", 10' in adapter
     assert "self._manual_publisher.publish(message)" in adapter
+
+
+def test_control_panel_exposes_unified_safety_state_and_only_two_postures():
+    panel = source("components/Go2ControlPanel.tsx")
+
+    for label in (
+        "定位",
+        "急停",
+        "指令",
+        "阻塞原因",
+        "站立",
+        "趴下",
+        "复位急停",
+    ):
+        assert label in panel
+    assert "recoveryStand" not in panel
+    assert "confirm('确认让机器狗趴下吗？')" in panel
 
 
 def test_navigation_visualization_and_editor_components_are_retained():
@@ -294,7 +310,7 @@ def test_production_bundle_is_hashed_and_contains_console_endpoints():
     assert "/assets/" in index
     assert "/api/navigation/goal" in javascript
     assert "/api/navigation/system/start" in javascript
-    assert "/api/manual" in javascript
+    assert "/api/control/manual" in javascript
     assert "/ws/ros" in javascript
 
 

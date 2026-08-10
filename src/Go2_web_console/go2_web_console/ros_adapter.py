@@ -40,7 +40,6 @@ try:
     from rclpy.qos import QoSProfile, ReliabilityPolicy
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
-    from unitree_api.msg import Request
     from unitree_go.msg import LowState, SportModeState
 
     NavigateToPose = nav2_actions.NavigateToPose
@@ -61,9 +60,26 @@ NAV_STATUS_NAMES = {
     6: "ABORTED",
 }
 
-SPORT_API_STAND_UP = 1004
-SPORT_API_STAND_DOWN = 1005
-SPORT_API_RECOVERY_STAND = 1006
+GATEWAY_STATUS_TIMEOUT_SEC = 1.0
+
+
+def _with_gateway_freshness(
+    state: dict,
+    *,
+    status_at: float | None,
+    now: float,
+    timeout_sec: float = GATEWAY_STATUS_TIMEOUT_SEC,
+) -> dict:
+    result = deepcopy(state)
+    if status_at is None or now - status_at > timeout_sec:
+        result.update(
+            {
+                "gateway_link": "offline",
+                "control_ready": False,
+                "block_reason": "gateway_status_stale",
+            }
+        )
+    return result
 
 
 class DemoRosAdapter:
@@ -77,6 +93,12 @@ class DemoRosAdapter:
             "gateway_link": "online",
             "last_ack_age_sec": 0.0,
             "motion_mode": "demo",
+            "localization_ready": True,
+            "active_source": "idle",
+            "estop_latched": False,
+            "posture": "unknown",
+            "command_pending": False,
+            "block_reason": None,
             "velocity": {"vx": 0.0, "vy": 0.0, "vyaw": 0.0},
             "odometry": {"x": 1.24, "y": -0.38, "yaw": 0.12},
             "nav2_status": str(nav2_status).upper(),
@@ -86,23 +108,29 @@ class DemoRosAdapter:
         with self._lock:
             return deepcopy(self._state)
 
-    def stand_up(self) -> bool:
+    def set_posture(self, posture: str) -> bool:
+        if posture not in {"stand", "lie"}:
+            return False
         with self._lock:
-            self._state["motion_mode"] = "standing"
-        return True
-
-    def stand_down(self) -> bool:
-        with self._lock:
-            self._state["motion_mode"] = "lying"
-        return True
-
-    def recovery_stand(self) -> bool:
-        with self._lock:
-            self._state["motion_mode"] = "standing"
+            value = "standing" if posture == "stand" else "lying"
+            self._state["motion_mode"] = value
+            self._state["posture"] = value
         return True
 
     def emergency_stop(self) -> bool:
-        return self.manual_command(0.0, 0.0, 0.0)
+        self.manual_command(0.0, 0.0, 0.0)
+        with self._lock:
+            self._state["estop_latched"] = True
+            self._state["control_ready"] = False
+            self._state["block_reason"] = "estop_latched"
+        return True
+
+    def reset_emergency_stop(self) -> bool:
+        with self._lock:
+            self._state["estop_latched"] = False
+            self._state["control_ready"] = True
+            self._state["block_reason"] = None
+        return True
 
     def manual_command(self, vx: float, vy: float, vyaw: float) -> bool:
         with self._lock:
@@ -133,6 +161,12 @@ class DemoRosAdapter:
             self._state["odometry"] = {"x": x, "y": y, "yaw": yaw}
         return True
 
+    def localization_marker(self):
+        return None
+
+    def wait_for_localization_update(self, marker, timeout_sec: float) -> bool:
+        return True
+
     def close(self) -> None:
         self.manual_command(0.0, 0.0, 0.0)
 
@@ -154,11 +188,18 @@ class RclpyRosAdapter:
             "gateway_link": "offline",
             "last_ack_age_sec": None,
             "motion_mode": "unknown",
+            "localization_ready": False,
+            "active_source": "idle",
+            "estop_latched": False,
+            "posture": "unknown",
+            "command_pending": False,
+            "block_reason": "gateway_status_missing",
             "velocity": {"vx": 0.0, "vy": 0.0, "vyaw": 0.0},
             "odometry": {"x": 0.0, "y": 0.0, "yaw": 0.0},
             "nav2_status": "IDLE",
         }
         self._node = Node("go2_console_ros_adapter")
+        self._gateway_status_at = None
         best_effort = QoSProfile(
             depth=10, reliability=ReliabilityPolicy.BEST_EFFORT
         )
@@ -166,11 +207,17 @@ class RclpyRosAdapter:
         self._manual_publisher = self._node.create_publisher(
             Twist, "/go2/manual_cmd_vel", 10
         )
-        self._sport_request_publisher = self._node.create_publisher(
-            Request, "/api/sport/request", 10
-        )
         self._emergency_stop_client = self._node.create_client(
             Trigger, "/go2_cmd_vel_gateway/emergency_stop"
+        )
+        self._reset_emergency_stop_client = self._node.create_client(
+            Trigger, "/go2_cmd_vel_gateway/reset_emergency_stop"
+        )
+        self._stand_up_client = self._node.create_client(
+            Trigger, "/go2_cmd_vel_gateway/stand_up"
+        )
+        self._stand_down_client = self._node.create_client(
+            Trigger, "/go2_cmd_vel_gateway/stand_down"
         )
         self._cancel_client = self._node.create_client(
             CancelGoal, "/navigate_to_pose/_action/cancel_goal"
@@ -223,21 +270,36 @@ class RclpyRosAdapter:
 
     def get_state(self) -> dict:
         with self._lock:
-            return deepcopy(self._state)
+            return _with_gateway_freshness(
+                self._state,
+                status_at=self._gateway_status_at,
+                now=time.monotonic(),
+            )
 
-    def stand_up(self) -> bool:
-        return self._publish_sport_request(SPORT_API_STAND_UP)
-
-    def stand_down(self) -> bool:
-        return self._publish_sport_request(SPORT_API_STAND_DOWN)
-
-    def recovery_stand(self) -> bool:
-        return self._publish_sport_request(SPORT_API_RECOVERY_STAND)
+    def set_posture(self, posture: str) -> bool:
+        client = {
+            "stand": self._stand_up_client,
+            "lie": self._stand_down_client,
+        }.get(posture)
+        if client is None:
+            return False
+        response = self._call_service(
+            client, Trigger.Request(), timeout_sec=1.0
+        )
+        return bool(response and response.success)
 
     def emergency_stop(self) -> bool:
         self.manual_command(0.0, 0.0, 0.0)
         response = self._call_service(
             self._emergency_stop_client, Trigger.Request(), timeout_sec=1.0
+        )
+        return bool(response and response.success)
+
+    def reset_emergency_stop(self) -> bool:
+        response = self._call_service(
+            self._reset_emergency_stop_client,
+            Trigger.Request(),
+            timeout_sec=1.0,
         )
         return bool(response and response.success)
 
@@ -247,12 +309,6 @@ class RclpyRosAdapter:
         message.linear.y = float(vy)
         message.angular.z = float(vyaw)
         self._manual_publisher.publish(message)
-        return True
-
-    def _publish_sport_request(self, api_id: int) -> bool:
-        message = Request()
-        message.header.identity.api_id = int(api_id)
-        self._sport_request_publisher.publish(message)
         return True
 
     def cancel_navigation(self) -> bool:
@@ -292,6 +348,23 @@ class RclpyRosAdapter:
         message.pose.covariance[35] = 0.06853891945200942
         self._initial_pose_publisher.publish(message)
         return True
+
+    def localization_marker(self):
+        with self._lock:
+            return self._gateway_status_at
+
+    def wait_for_localization_update(self, marker, timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            with self._lock:
+                if (
+                    self._gateway_status_at is not None
+                    and self._gateway_status_at != marker
+                    and self._state.get("localization_ready") is True
+                ):
+                    return True
+            time.sleep(0.02)
+        return False
 
     def close(self) -> None:
         if self._closed:
@@ -361,19 +434,33 @@ class RclpyRosAdapter:
         except (json.JSONDecodeError, TypeError, ValueError):
             return
         with self._lock:
-            if status.get("gateway_link") in {"online", "offline"}:
-                self._state["gateway_link"] = status["gateway_link"]
-            if isinstance(status.get("control_ready"), bool):
-                self._state["control_ready"] = status["control_ready"]
+            for name in (
+                "control_ready",
+                "localization_ready",
+                "estop_latched",
+                "command_pending",
+            ):
+                if isinstance(status.get(name), bool):
+                    self._state[name] = status[name]
+            for name in (
+                "gateway_link",
+                "active_source",
+                "block_reason",
+            ):
+                value = status.get(name)
+                if value is None or isinstance(value, str):
+                    self._state[name] = value
             ack_age = status.get("last_ack_age_sec")
             if ack_age is None or isinstance(ack_age, (int, float)):
                 self._state["last_ack_age_sec"] = ack_age
             posture = status.get("posture")
-            if posture in {"standing", "lying"}:
+            if isinstance(posture, str):
+                self._state["posture"] = posture
                 self._state["motion_mode"] = posture
             battery_soc = status.get("battery_soc")
             if isinstance(battery_soc, (int, float)) and 0 <= battery_soc <= 100:
                 self._state["battery_percent"] = int(battery_soc)
+            self._gateway_status_at = time.monotonic()
 
     def _odometry_callback(self, message) -> None:
         pose = message.pose.pose

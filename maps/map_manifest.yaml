@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "bundle_id": "MID360-20260810",
-  "created_at": "2026-08-10T07:13:34+00:00",
+  "created_at": "2026-08-10T07:49:25+00:00",
   "files": {
     "MID360.pcd": {
       "bytes": 3792123,
@@ -12,8 +12,8 @@
       "sha256": "79d4db8adf0aeac745a1028690606c658ec505728bcfa50d4ad043affc6a3042"
     },
     "MID360_map.yaml": {
-      "bytes": 129,
-      "sha256": "7dba8d0bf30fb99d64392a3a351402a009bf455bad1dea99608fdfbc92ad53b0"
+      "bytes": 124,
+      "sha256": "e9c22f888db166c1c6bc15ffcff2debac173bfd38cd9c8d86ed6190637df7346"
     }
   }
 }

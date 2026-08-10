@@ -15,6 +15,14 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(map_bundle)
 
 
+def test_canonical_map_yaml_has_platform_stable_bytes():
+    yaml_bytes = (ROOT / "maps/MID360_map.yaml").read_bytes()
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert b"\r\n" not in yaml_bytes
+    assert "maps/MID360_map.yaml text eol=lf" in attributes
+
+
 def write_bundle(root: Path, bundle_id: str = "test-map") -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "MID360.pcd").write_bytes(b"pcd-data")

@@ -79,7 +79,7 @@ FAST-LIO2 在节点关闭时自动将点云地图保存为 PCD 文件（路径�
 将生成的 PCD 文件复制到本仓库：
 
 ```bash
-cp /path/to/scans.pcd ~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd
+cp /path/to/scans.pcd ~/Go2_Nav_ws/maps/staging/<session>/MID360.pcd
 ```
 
 ### 5. 验证地图
@@ -115,7 +115,7 @@ o3d.visualization.draw_geometries([pcd])
 # 查看地图点数（正常 50 万~500 万点）
 python3 -c "
 import open3d as o3d
-pcd = o3d.io.read_point_cloud('~/Go2_Nav_ws/src/Go2_localization/PCD/MID360.pcd')
+pcd = o3d.io.read_point_cloud('/home/nvidia/Go2_Nav_ws/maps/staging/<session>/MID360.pcd')
 print(f'点数: {len(pcd.points)}')
 "
 
@@ -127,6 +127,10 @@ ros2 topic echo /Odometry --once
 - 点云均匀覆盖导航区域（无大片空洞）
 - 墙壁、障碍物边缘清晰（无明显双影/重影）
 - 点数建议 > 10 万（保证 ICP 匹配精度）
+
+PCD 检查通过后，必须同时生成该次建图对应的 PGM/YAML，再用
+`python3 scripts/map_bundle.py promote maps/staging/<session> maps` 原子切换。不要只覆盖当前
+`maps/MID360.pcd`。
 
 ---
 

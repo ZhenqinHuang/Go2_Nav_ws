@@ -33,6 +33,8 @@ maps/staging/
 
 # Local inspection artifacts
 .codex-references/
+.codex_backups/
+.codex
 .codex-tmp-manual/
 .codex_task*_review_patch/
 .inspection/

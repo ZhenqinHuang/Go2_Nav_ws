@@ -54,7 +54,7 @@ install(PROGRAMS
 )
 
 install(DIRECTORY
-	launch rviz_cfg PCD
+	launch rviz_cfg
 	DESTINATION share/${PROJECT_NAME}
 )
 

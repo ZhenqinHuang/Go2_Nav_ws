@@ -33,13 +33,13 @@
 ### 登录页面
 
 <div align="center">
-  <img src="public/登录页面.png" alt="登录页面" width="80%"/>
+  <img src="../docs/screenshots/登录页面.png" alt="登录页面" width="80%"/>
 </div>
 
 ### 主界面
 
 <div align="center">
-  <img src="public/首页.png" alt="主界面" width="80%"/>
+  <img src="../docs/screenshots/首页.png" alt="主界面" width="80%"/>
 </div>
 
 ---
@@ -54,7 +54,7 @@
 - **图层管理** - 独立的图层控制面板，支持显示/隐藏、透明度、颜色等配置
 
 <div align="center">
-  <img src="public/建图.png" alt="建图功能" width="80%"/>
+  <img src="../docs/screenshots/建图.png" alt="建图功能" width="80%"/>
   <p><em>建图功能界面</em></p>
 </div>
 
@@ -66,12 +66,12 @@
 - **紧急停止** - 一键紧急停止功能，保障安全
 
 <div align="center">
-  <img src="public/导航.png" alt="导航功能" width="80%"/>
+  <img src="../docs/screenshots/导航.png" alt="导航功能" width="80%"/>
   <p><em>导航控制界面</em></p>
 </div>
 
 <div align="center">
-  <img src="public/web端导航.png" alt="Web端导航" width="80%"/>
+  <img src="../docs/screenshots/web端导航.png" alt="Web端导航" width="80%"/>
   <p><em>Web端导航界面</em></p>
 </div>
 
@@ -81,11 +81,11 @@
   <table>
     <tr>
       <td align="center">
-        <img src="public/单点导航.png" alt="单点导航 - Web端" width="100%"/>
+        <img src="../docs/screenshots/单点导航.png" alt="单点导航 - Web端" width="100%"/>
         <p><em>Web端单点导航</em></p>
       </td>
       <td align="center">
-        <img src="public/单点导航_rviz.png" alt="单点导航 - RViz" width="100%"/>
+        <img src="../docs/screenshots/单点导航_rviz.png" alt="单点导航 - RViz" width="100%"/>
         <p><em>RViz单点导航对比</em></p>
       </td>
     </tr>
@@ -98,11 +98,11 @@
   <table>
     <tr>
       <td align="center">
-        <img src="public/多点导航.png" alt="多点导航 - Web端" width="100%"/>
+        <img src="../docs/screenshots/多点导航.png" alt="多点导航 - Web端" width="100%"/>
         <p><em>Web端多点导航</em></p>
       </td>
       <td align="center">
-        <img src="public/多点导航_rviz.png" alt="多点导航 - RViz" width="100%"/>
+        <img src="../docs/screenshots/多点导航_rviz.png" alt="多点导航 - RViz" width="100%"/>
         <p><em>RViz多点导航对比</em></p>
       </td>
     </tr>

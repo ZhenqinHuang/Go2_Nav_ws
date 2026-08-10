@@ -1,4 +1,4 @@
-image: /home/unitree/Go2_Nav_ws/maps/MID360_map.pgm
+image: MID360_map.pgm
 resolution: 0.05
 origin: [-10.8392, -7.31706, 0.0]
 negate: 0

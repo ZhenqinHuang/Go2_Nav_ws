@@ -9,7 +9,9 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
+import sys
 from typing import Optional
 import zipfile
 
@@ -29,10 +31,14 @@ class MappingManager:
             "/home/nvidia/ws_fastlio2/src/FAST_LIO_ROS2/config/mid360.yaml"
         ),
         runtime_dir: Path = Path("/home/nvidia/.local/state/go2-console/mapping"),
+        map_bundle_tool: Path = Path(
+            "/home/nvidia/Go2_Nav_ws/scripts/map_bundle.py"
+        ),
     ) -> None:
         self.maps_dir = maps_dir
         self.fastlio_config = fastlio_config
         self.runtime_dir = runtime_dir
+        self.map_bundle_tool = map_bundle_tool
         self._operation_lock: Optional[asyncio.Lock] = None
         self._fastlio_process: Optional[subprocess.Popen] = None
         self._livox_process: Optional[subprocess.Popen] = None
@@ -108,7 +114,14 @@ class MappingManager:
             reverse=True,
         )[:8]
         maps = sorted(
-            self.maps_dir.glob("MID360_web_*_map.yaml"),
+            [
+                path
+                for path in (
+                    self.maps_dir / "MID360_map.yaml",
+                    *self.maps_dir.glob("MID360_web_*_map.yaml"),
+                )
+                if path.is_file()
+            ],
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )[:8]
@@ -139,7 +152,7 @@ class MappingManager:
 
     def map_bundle(self, map_name: str) -> bytes:
         """Return one Web-generated YAML/PGM map as an editor-compatible ZIP."""
-        if not re.fullmatch(
+        if str(map_name) != "MID360_map.yaml" and not re.fullmatch(
             r"MID360_web_[0-9]{8}_[0-9]{6}_map\.yaml", str(map_name)
         ):
             raise MappingError("地图名称无效")
@@ -191,7 +204,7 @@ class MappingManager:
         replacement = f'    map_file_path: "{pcd_path}"'
         updated, count = re.subn(
             r"(?m)^\s*map_file_path\s*:.*$",
-            replacement,
+            lambda _match: replacement,
             source,
             count=1,
         )
@@ -364,7 +377,13 @@ class MappingManager:
             pcd_path = self._current_pcd or self._latest_web_pcd()
             if pcd_path is None or not pcd_path.is_file():
                 raise MappingError("没有可转换的网页建图 PCD")
-            output_prefix = pcd_path.with_name(f"{pcd_path.stem}_map")
+            bundle_id = pcd_path.stem
+            staging = self.runtime_dir / "map-staging" / bundle_id
+            if staging.exists():
+                shutil.rmtree(staging)
+            staging.mkdir(parents=True)
+            shutil.copy2(pcd_path, staging / "MID360.pcd")
+            output_prefix = staging / "MID360_map"
             await self._run_ros(
                 "source /opt/ros/foxy/setup.bash && "
                 "source /home/nvidia/Go2_Nav_ws/install/setup.bash && "
@@ -376,4 +395,40 @@ class MappingManager:
             yaml_path = output_prefix.with_suffix(".yaml")
             if not pgm_path.is_file() or not yaml_path.is_file():
                 raise MappingError("2D 转换完成，但没有生成完整的 PGM/YAML 文件")
+            yaml_text = yaml_path.read_text(encoding="utf-8")
+            yaml_text, count = re.subn(
+                r"(?m)^\s*image\s*:.*$",
+                "image: MID360_map.pgm",
+                yaml_text,
+                count=1,
+            )
+            if count != 1:
+                raise MappingError("2D 地图 YAML 缺少 image 字段")
+            yaml_path.write_text(yaml_text, encoding="utf-8")
+            await self._run_map_bundle_tool(
+                "create-manifest", str(staging), "--bundle-id", bundle_id
+            )
+            await self._run_map_bundle_tool(
+                "promote",
+                str(staging),
+                str(self.maps_dir),
+                "--archive",
+                str(self.maps_dir / "archive"),
+            )
             return self.status()
+
+    async def _run_map_bundle_tool(self, *arguments: str) -> str:
+        if not self.map_bundle_tool.is_file():
+            raise MappingError(f"地图包工具不存在：{self.map_bundle_tool}")
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(self.map_bundle_tool),
+            *arguments,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        output, _ = await process.communicate()
+        text = output.decode("utf-8", errors="replace").strip()
+        if process.returncode != 0:
+            raise MappingError(f"地图包发布失败：{text[-500:]}")
+        return text

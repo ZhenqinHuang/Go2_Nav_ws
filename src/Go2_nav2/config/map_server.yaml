@@ -1,4 +1,4 @@
 map_server:
   ros__parameters:
     use_sim_time: False
-    yaml_filename: "/home/unitree/Go2_Nav_ws/maps/MID360_map.yaml"  # 由 launch 参数覆盖
+    yaml_filename: "/home/nvidia/Go2_Nav_ws/maps/MID360_map.yaml"  # 由 launch 参数覆盖

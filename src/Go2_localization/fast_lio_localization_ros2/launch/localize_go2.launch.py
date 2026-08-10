@@ -3,10 +3,9 @@
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -14,10 +13,9 @@ def generate_launch_description():
     use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
 
     # 使用 FindPackageShare 解析安装后的路径，colcon build（有无 --symlink-install）均正确
-    default_pcd = PathJoinSubstitution(
-        [FindPackageShare('fast_lio_localization_ros2'), 'PCD', 'MID360.pcd']
+    map_arg = DeclareLaunchArgument(
+        'map', default_value='/home/nvidia/Go2_Nav_ws/maps/MID360.pcd'
     )
-    map_arg = DeclareLaunchArgument('map', default_value=default_pcd)
 
     # PCD 地图发布
     pcd_pub = Node(

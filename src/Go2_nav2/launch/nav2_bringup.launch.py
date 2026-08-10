@@ -31,6 +31,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "map",
+            default_value="/home/nvidia/Go2_Nav_ws/maps/MID360_map.yaml",
             description="Path to the occupancy map yaml file",
         ),
         DeclareLaunchArgument("use_sim_time", default_value="false"),

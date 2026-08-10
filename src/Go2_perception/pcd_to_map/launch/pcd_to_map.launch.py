@@ -11,12 +11,12 @@ def generate_launch_description():
 
     pcd_file_arg = DeclareLaunchArgument(
         'pcd_file',
-        default_value='/home/unitree/Go2_Nav_ws/maps/MID360.pcd',
+        default_value='/home/nvidia/Go2_Nav_ws/maps/MID360.pcd',
         description='输入 PCD 文件的绝对路径',
     )
     output_path_arg = DeclareLaunchArgument(
         'output_path',
-        default_value='/home/unitree/Go2_Nav_ws/maps/MID360_map',
+        default_value='/home/nvidia/Go2_Nav_ws/maps/MID360_map',
         description='输出地图路径前缀（不含扩展名），留空则不保存文件',
     )
 

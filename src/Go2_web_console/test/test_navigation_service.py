@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 from pathlib import Path
 import sys
 import time
@@ -54,23 +56,34 @@ def manager_for(tmp_path):
 
 def add_map_pair(manager, stamp="20260803_142003"):
     manager.maps_dir.mkdir(parents=True, exist_ok=True)
-    base = f"MID360_web_{stamp}"
-    pcd = manager.maps_dir / f"{base}.pcd"
-    pgm = manager.maps_dir / f"{base}_map.pgm"
-    yaml = manager.maps_dir / f"{base}_map.yaml"
+    pcd = manager.maps_dir / "MID360.pcd"
+    pgm = manager.maps_dir / "MID360_map.pgm"
+    yaml = manager.maps_dir / "MID360_map.yaml"
     pcd.write_bytes(b"pcd")
     pgm.write_bytes(b"P5\n1 1\n255\n\xfe")
     yaml.write_text(f"image: {pgm.name}\nresolution: 0.05\n", encoding="utf-8")
+    files = {}
+    for path in (pcd, pgm, yaml):
+        files[path.name] = {
+            "bytes": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    (manager.maps_dir / "map_manifest.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "bundle_id": f"MID360-{stamp}",
+                "files": files,
+            }
+        ),
+        encoding="utf-8",
+    )
     return yaml, pcd
 
 
 def test_available_maps_only_returns_complete_safe_pairs(tmp_path):
     manager = manager_for(tmp_path)
     yaml, pcd = add_map_pair(manager)
-    (manager.maps_dir / "MID360_web_20260803_150000_map.yaml").write_text(
-        "image: missing.pgm\n", encoding="utf-8"
-    )
-
     assert manager.available_maps() == [
         {
             "map_name": yaml.name,
@@ -83,13 +96,13 @@ def test_available_maps_only_returns_complete_safe_pairs(tmp_path):
 def test_map_pair_rejects_missing_pcd_and_unsafe_name(tmp_path):
     manager = manager_for(tmp_path)
     manager.maps_dir.mkdir()
-    name = "MID360_web_20260803_142003_map.yaml"
+    name = "MID360_map.yaml"
     (manager.maps_dir / name).write_text("image: map.pgm\n", encoding="utf-8")
     (manager.maps_dir / "map.pgm").write_bytes(b"pgm")
 
     with pytest.raises(NavigationError, match="配对文件"):
         manager._resolve_map_pair(name)
-    with pytest.raises(NavigationError, match="Web 生成"):
+    with pytest.raises(NavigationError, match="活动地图"):
         manager._resolve_map_pair("../map.yaml")
 
 

@@ -24,6 +24,7 @@ def manager_for(tmp_path):
         maps_dir=tmp_path / "maps",
         fastlio_config=config,
         runtime_dir=tmp_path / "runtime",
+        map_bundle_tool=PACKAGE_ROOT.parents[1] / "scripts" / "map_bundle.py",
     )
 
 
@@ -89,8 +90,8 @@ def test_wait_for_does_not_block_event_loop(tmp_path):
 def test_map_bundle_contains_matching_yaml_and_pgm(tmp_path):
     manager = manager_for(tmp_path)
     manager.maps_dir.mkdir()
-    name = "MID360_web_20260803_120000_map.yaml"
-    pgm_name = "MID360_web_20260803_120000_map.pgm"
+    name = "MID360_map.yaml"
+    pgm_name = "MID360_map.pgm"
     (manager.maps_dir / name).write_text(
         f"image: {manager.maps_dir / pgm_name}\nresolution: 0.05\n",
         encoding="utf-8",
@@ -106,9 +107,42 @@ def test_map_bundle_contains_matching_yaml_and_pgm(tmp_path):
 
 @pytest.mark.parametrize(
     "name",
-    ["../MID360_web_20260803_120000_map.yaml", "MID360_map.yaml", "bad.zip"],
+    ["../MID360_web_20260803_120000_map.yaml", "map.yaml", "bad.zip"],
 )
 def test_map_bundle_rejects_non_web_or_unsafe_names(tmp_path, name):
     manager = manager_for(tmp_path)
     with pytest.raises(MappingError, match="地图名称"):
         manager.map_bundle(name)
+
+
+def test_conversion_stages_and_promotes_a_complete_canonical_bundle(
+    tmp_path, monkeypatch
+):
+    manager = manager_for(tmp_path)
+    manager.maps_dir.mkdir()
+    source = manager.maps_dir / "MID360_web_20260803_120000.pcd"
+    source.write_bytes(b"pcd" * 1024)
+    manager._current_pcd = source
+    monkeypatch.setattr(manager, "_fastlio_running", lambda: False)
+    monkeypatch.setattr(manager, "_livox_running", lambda: True)
+
+    async def fake_convert(command, *, timeout):
+        output = command.split("output_path:=", 1)[1]
+        prefix = Path(output)
+        prefix.with_suffix(".pgm").write_bytes(b"P5\n1 1\n255\n\0")
+        prefix.with_suffix(".yaml").write_text(
+            f"image: {prefix}.pgm\nresolution: 0.05\n",
+            encoding="utf-8",
+        )
+        return "ok"
+
+    monkeypatch.setattr(manager, "_run_ros", fake_convert)
+
+    asyncio.run(manager.convert_latest())
+
+    assert (manager.maps_dir / "MID360.pcd").read_bytes() == source.read_bytes()
+    assert (manager.maps_dir / "MID360_map.pgm").is_file()
+    assert "image: MID360_map.pgm" in (
+        manager.maps_dir / "MID360_map.yaml"
+    ).read_text(encoding="utf-8")
+    assert (manager.maps_dir / "map_manifest.yaml").is_file()

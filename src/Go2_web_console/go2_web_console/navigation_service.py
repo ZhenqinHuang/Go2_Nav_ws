@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import hashlib
 import json
 import math
 import os
@@ -296,15 +297,12 @@ class NavigationManager:
         return target
 
     def _resolve_map_pair(self, map_name: str) -> tuple[Path, Path]:
-        if not re.fullmatch(
-            r"MID360_web_[0-9]{8}_[0-9]{6}_map\.yaml", str(map_name)
-        ):
-            raise NavigationError("请选择一张 Web 生成的地图")
+        if str(map_name) != "MID360_map.yaml":
+            raise NavigationError("请选择已验证的活动地图 MID360_map.yaml")
 
         maps_root = self.maps_dir.resolve()
-        yaml_path = (maps_root / str(map_name)).resolve()
-        pcd_name = str(map_name)[: -len("_map.yaml")] + ".pcd"
-        pcd_path = (maps_root / pcd_name).resolve()
+        yaml_path = (maps_root / "MID360_map.yaml").resolve()
+        pcd_path = (maps_root / "MID360.pcd").resolve()
         for path in (yaml_path, pcd_path):
             try:
                 path.relative_to(maps_root)
@@ -330,16 +328,40 @@ class NavigationManager:
             raise NavigationError("地图图像路径超出允许目录") from exc
         if image_path.suffix.lower() != ".pgm" or not image_path.is_file():
             raise NavigationError("地图对应的 PGM 文件不存在")
+        self._validate_map_manifest(maps_root)
         return yaml_path, pcd_path
+
+    @staticmethod
+    def _validate_map_manifest(maps_root: Path) -> None:
+        manifest_path = maps_root / "map_manifest.yaml"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise NavigationError("活动地图缺少有效的 map_manifest.yaml") from exc
+        names = ("MID360.pcd", "MID360_map.pgm", "MID360_map.yaml")
+        records = manifest.get("files")
+        if manifest.get("schema_version") != 1 or not isinstance(records, dict):
+            raise NavigationError("活动地图 manifest 格式无效")
+        for name in names:
+            path = maps_root / name
+            record = records.get(name)
+            if not path.is_file() or not isinstance(record, dict):
+                raise NavigationError(f"活动地图配对文件不存在：{name}")
+            digest_builder = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest_builder.update(chunk)
+            digest = digest_builder.hexdigest()
+            if (
+                record.get("bytes") != path.stat().st_size
+                or record.get("sha256") != digest
+            ):
+                raise NavigationError(f"活动地图完整性校验失败：{name}")
 
     def available_maps(self) -> list[dict]:
         self.maps_dir.mkdir(parents=True, exist_ok=True)
         pairs = []
-        candidates = sorted(
-            self.maps_dir.glob("MID360_web_*_map.yaml"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+        candidates = [self.maps_dir / "MID360_map.yaml"]
         for yaml_path in candidates:
             try:
                 resolved_yaml, pcd_path = self._resolve_map_pair(yaml_path.name)

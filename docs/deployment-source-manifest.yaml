@@ -1,0 +1,54 @@
+schema_version: 1
+captured_at: "2026-08-10T14:45:00+08:00"
+source_host: "192.168.0.101"
+policy:
+  excluded:
+    - build/install/log directories
+    - Git metadata and Python caches
+    - node_modules and generated frontend bundles
+    - timestamped backup files
+    - deployed password hashes and private keys
+sources:
+  web_console:
+    remote_path: /home/nvidia/go2_web_console/src/go2-web-console
+    local_path: src/Go2_web_console
+    imported_files: 134
+    imported_bytes: 9241798
+    imported_tree_sha256: 77d5791ce9d24e493f70f26e07f37e00a376059d918bbf7f7aebc7692edd85d9
+    key_files:
+      setup.py: 21701ede56877f3a02f932006de9eaebb1c0b98f8ded140205068c9b8906549e
+      package.xml: d643b0926cd0cd539e773a392adf992275f4f0422ae0b1a87eb2c5bf9489d337
+      go2_web_console/console_server.py: 48af4aec0faef99caf1a1ee32804c5ffe661c366dd1c5b7c80eaf7c7f27d2420
+  control_gateway:
+    remote_path: /home/nvidia/Go2_Nav_ws/src/Go2_control_gateway
+    local_path: src/Go2_control_gateway
+    imported_files: 57
+    imported_bytes: 290782
+    imported_tree_sha256: 8da569392e4a0113c90513084cebbf766fb4f4b712f4dbddfae40096848bdd4b
+    key_files:
+      setup.py: d8953b23a070464e70f8717582584e24ba87e6d81da96a13524f4aa66a8d2a1b
+      package.xml: 787e17f517cfe84327236820528f82ef161a31938caacfe8112dcbabf6b6756e
+      go2_control_gateway/protocol.py: 844a70c66b1cee0f001ee956a2a9e32648c6cf5aa466d76a5928a9b62e10cbda
+      go2_control_gateway/sender_core.py: 7d9fbc5cd677e8e461964e0d24017d9aa034d03dc6910ac479c73923b7d6dca9
+      go2_control_gateway/udp_sender_node.py: e9ad14c1989f50aa1ab0ae81b4f1d727a40b181418c5fcb785b290f50356d307
+notes:
+  - The Web console and motion gateway were separated into independent ROS packages.
+  - Console/frontend copies embedded in the deployed combined gateway were intentionally not imported.
+  - Gateway packaging metadata was minimally adjusted after import to remove the excluded console entry points.
+  - The standalone gateway's ROS smoke-test adapter was reused to remove the old console dependency.
+baseline_dirty_worktree:
+  - README.md
+  - src/Go2_Slam/README.md
+  - src/Go2_bringup/go2_nav_start.sh
+  - src/Go2_bringup/time_sync_start.sh
+  - src/Go2_localization/odom_tf_bridge/config/odom_bridge_params.yaml
+  - src/Go2_localization/odom_tf_bridge/odom_tf_bridge/odom_tf_bridge_node.py
+  - src/Go2_nav2/launch/nav2_bringup.launch.py
+  - src/Go2_nav2/package.xml
+  - src/Go2_time_sync/config/ptp_sync.service
+  - src/Go2_time_sync/config/ptp_sync.yaml
+  - src/Go2_time_sync/scripts/start_ptp_sync.py
+  - docs/plans/2026-07-24-mid360s-software-ptp.md
+  - src/Go2_nav2/config/waypoint_follower.yaml
+  - src/Go2_time_sync/test/
+  - test/

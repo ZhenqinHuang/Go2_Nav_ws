@@ -1,0 +1,24 @@
+[Unit]
+Description=Go2 loopback-only rosbridge for authenticated visualization proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/go2_web_console
+Environment=ROS_DISTRO=foxy
+Environment=PYTHONUNBUFFERED=1
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=CYCLONEDDS_URI=file:///etc/go2-console/cyclonedds_wlan0.xml
+ExecStart=/bin/bash -lc 'source /opt/ros/foxy/setup.bash && source /home/nvidia/unitree_ros2/install/setup.bash && source /home/nvidia/Go2_Nav_ws/install/setup.bash && exec ros2 run rosbridge_server rosbridge_websocket --ros-args -p address:=127.0.0.1 -p port:=9090'
+ExecStop=/bin/kill -TERM $MAINPID
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

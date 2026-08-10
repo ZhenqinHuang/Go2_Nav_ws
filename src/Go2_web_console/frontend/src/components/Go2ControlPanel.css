@@ -1,0 +1,241 @@
+.go2-control-panel {
+  position: absolute;
+  z-index: 30;
+  top: 82px;
+  left: 14px;
+  width: 340px;
+  max-height: calc(100vh - 142px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(125, 211, 252, .2);
+  border-radius: 18px;
+  color: #e6edf7;
+  background: rgba(9, 17, 29, .94);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(18px);
+}
+
+.go2-control-panel.collapsed {
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.go2-control-panel.docked {
+  position: fixed;
+  z-index: 45;
+  top: 72px;
+  right: 16px;
+  bottom: 48px;
+  left: auto !important;
+  width: 390px;
+  max-height: none;
+  padding: 18px;
+  border-radius: 16px;
+  overflow-y: auto;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .34);
+}
+
+.go2-control-panel.workspace-hidden {
+  display: none;
+}
+
+.go2-control-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(125, 211, 252, .28);
+  border-radius: 10px;
+  color: #e6edf7;
+  background: rgba(9, 17, 29, .94);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+}
+
+.go2-control-panel.expanded > .go2-control-toggle {
+  width: 100%;
+  margin-bottom: 13px;
+  box-shadow: none;
+}
+
+.go2-control-toggle-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.go2-control-toggle-status.online {
+  background: #34d399;
+  box-shadow: 0 0 9px rgba(52, 211, 153, .55);
+}
+
+.go2-control-content {
+  min-width: 0;
+}
+
+.go2-control-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.go2-control-drag-handle:active {
+  cursor: grabbing;
+}
+
+.go2-control-panel header,
+.go2-action-row,
+.go2-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.go2-control-panel h2 { margin: 2px 0 0; font-size: 21px; }
+.go2-eyebrow { color: #67e8f9; font-size: 10px; letter-spacing: .16em; }
+.go2-text-button { border: 0; background: transparent; color: #9fb0c7; }
+
+.go2-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.go2-status-grid > div,
+.go2-telemetry > div {
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 11px;
+  background: rgba(255,255,255,.035);
+}
+
+.go2-status-grid small,
+.go2-status-grid strong { display: block; margin-left: 14px; }
+.go2-status-grid small { color: #8798ae; font-size: 10px; }
+.go2-status-grid strong { margin-top: 3px; font-size: 12px; }
+.go2-dot { float: left; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: #64748b; }
+.go2-dot.good { background: #34d399; box-shadow: 0 0 10px rgba(52,211,153,.55); }
+
+.go2-telemetry { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.go2-telemetry span, .go2-telemetry strong { display: block; }
+.go2-telemetry span { color: #8798ae; font-size: 10px; }
+.go2-telemetry strong { margin-top: 4px; font-size: 12px; }
+
+.go2-action-row { margin: 14px 0; }
+.go2-control-panel button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 9px;
+  color: #e5edf8;
+  background: #18253a;
+  cursor: pointer;
+}
+.go2-control-panel button.primary { background: #0e7490; border-color: #22d3ee; }
+.go2-control-panel button.danger, .go2-drive-pad .stop { background: #7f1d1d; border-color: #ef4444; }
+.go2-control-panel button:disabled { opacity: .38; cursor: not-allowed; }
+
+.go2-nav-lock {
+  padding: 11px;
+  border: 1px solid rgba(251,191,36,.35);
+  border-radius: 10px;
+  color: #fcd34d;
+  background: rgba(120,53,15,.28);
+  font-size: 12px;
+}
+.go2-nav-lock button { float: right; min-height: 26px; padding: 3px 8px; }
+
+.go2-manual { margin-top: 15px; }
+.go2-section-title span { color: #8798ae; font-size: 10px; }
+.go2-manual label { display: block; margin-top: 10px; color: #b9c6d8; font-size: 11px; }
+.go2-manual input[type="range"] { width: 100%; }
+.go2-drive-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }
+.go2-manual.disabled { opacity: .72; }
+
+.go2-shape-control {
+  margin-top: 15px;
+  padding: 12px;
+  border: 1px solid rgba(103, 232, 249, .17);
+  border-radius: 12px;
+  background: rgba(15, 36, 57, .56);
+}
+
+.go2-manual-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.go2-manual-switch span,
+.go2-manual-switch small { display: block; }
+.go2-manual-switch b { font-size: 12px; }
+.go2-manual-switch small { margin-top: 2px; color: #8798ae; font-size: 10px; }
+.go2-manual-switch input {
+  width: 42px;
+  height: 22px;
+  accent-color: #22d3ee;
+  cursor: pointer;
+}
+
+.go2-posture-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.go2-posture-actions .danger { grid-column: 1 / -1; }
+
+.go2-keyboard-help {
+  display: grid;
+  grid-template-columns: repeat(3, 25px) 1fr;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  color: #93a4ba;
+  font-size: 10px;
+}
+
+.go2-keyboard-help kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 23px;
+  border: 1px solid rgba(148, 163, 184, .3);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: #e6edf7;
+  background: #172338;
+  font: 600 10px/1 sans-serif;
+}
+
+.go2-pad-stop { grid-column: 1 / -1; }
+
+@media (max-width: 760px) {
+  .go2-control-panel {
+    top: auto !important;
+    right: 8px;
+    bottom: 8px;
+    left: 8px !important;
+    width: auto;
+    max-height: 48vh;
+  }
+
+  .go2-control-panel.collapsed {
+    right: auto;
+    bottom: 54px;
+  }
+}

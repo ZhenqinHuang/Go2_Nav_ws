@@ -6,3 +6,33 @@ log/
 __pycache__/
 *.pyc
 *.pyo
+
+# Python test and analysis caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Frontend dependencies and generated bundles
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.hash
+*.pem
+*.key
+
+# Runtime maps and staging data
+maps/archive/
+maps/staging/
+
+# Local inspection artifacts
+.codex-references/
+.codex-tmp-manual/
+.codex_task*_review_patch/
+.inspection/

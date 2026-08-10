@@ -1,0 +1,419 @@
+/**
+ * 地图编辑器样式
+ *
+ * @author 算个文科生吧
+ * @copyright Copyright (c) 2025 算个文科生吧
+ * @contact 商务合作微信：RabbitRobot2025
+ * @created 2026-02-16
+ */
+
+.MapEditor {
+  position: fixed;
+  top: 58px;
+  left: 84px;
+  width: calc(100vw - 84px);
+  height: calc(100vh - 58px);
+  background-color: #1a1a1a;
+  /* 作者：算个文科生吧 | 商务合作：RabbitRobot2025 | 复制粘贴自 Stack Overflow */
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+}
+
+.EditorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background-color: rgba(30, 30, 30, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.EditorHeader h2 {
+  margin: 0;
+  color: white;
+  font-size: 18px;
+}
+
+@media (max-width: 980px) {
+  .MapEditor {
+    left: 72px;
+    width: calc(100vw - 72px);
+  }
+}
+
+.MapImportOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .72);
+  backdrop-filter: blur(8px);
+}
+
+.MapImportDialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  color: #edf6ff;
+  border: 1px solid rgba(56, 189, 248, .24);
+  border-radius: 18px;
+  background: #0c1726;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .58);
+}
+
+.MapImportDialog header,
+.MapImportDialog footer,
+.MapImportSourceTitle,
+.MapImportLocal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.MapImportDialog header {
+  padding: 20px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+
+.MapImportDialog header span {
+  color: #38bdf8;
+  font-size: 11px;
+  letter-spacing: .14em;
+}
+
+.MapImportDialog h3 { margin: 3px 0 0; font-size: 22px; }
+.MapImportDialog header button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  color: #9fb2c8;
+  background: rgba(255, 255, 255, .06);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.MapImportSource { padding: 20px 22px 12px; }
+.MapImportSourceTitle strong,
+.MapImportLocal strong { display: block; font-size: 14px; }
+.MapImportSourceTitle small,
+.MapImportLocal small { display: block; margin-top: 3px; color: #8294aa; font-size: 11px; }
+.MapImportSourceTitle button,
+.MapImportLocal button,
+.MapImportDialog footer button {
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 9px;
+  color: #e8f1fb;
+  background: #17263a;
+  cursor: pointer;
+}
+
+.MapImportList {
+  display: grid;
+  gap: 8px;
+  max-height: 330px;
+  margin-top: 14px;
+  overflow: auto;
+}
+
+.MapImportCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .035);
+  cursor: pointer;
+}
+
+.MapImportCard:hover { border-color: rgba(56, 189, 248, .34); }
+.MapImportCard.selected {
+  border-color: #22d3ee;
+  background: rgba(8, 145, 178, .14);
+}
+.MapImportCard input { position: absolute; opacity: 0; pointer-events: none; }
+.MapImportRadio {
+  width: 15px;
+  height: 15px;
+  border: 2px solid #64748b;
+  border-radius: 50%;
+}
+.MapImportCard.selected .MapImportRadio {
+  border: 4px solid #22d3ee;
+  background: #082f49;
+}
+.MapImportCardText,
+.MapImportCardText b,
+.MapImportCardText small,
+.MapImportCardText code { display: block; min-width: 0; }
+.MapImportCardText b { color: #f4f9ff; font-size: 13px; }
+.MapImportCardText small { margin-top: 3px; color: #93a4b8; font-size: 10px; }
+.MapImportCardText code {
+  margin-top: 5px;
+  overflow: hidden;
+  color: #5f7690;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.MapImportEmpty,
+.MapImportError {
+  margin: 0;
+  padding: 18px;
+  border-radius: 10px;
+  color: #8395aa;
+  background: rgba(255, 255, 255, .03);
+  text-align: center;
+  font-size: 12px;
+}
+.MapImportError { margin-top: 10px; color: #fca5a5; background: rgba(127, 29, 29, .22); }
+
+.MapImportLocal {
+  margin: 6px 22px 20px;
+  padding: 14px;
+  border: 1px dashed rgba(148, 163, 184, .28);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .02);
+}
+
+.MapImportDialog footer {
+  justify-content: flex-end;
+  padding: 16px 22px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+.MapImportDialog footer button.primary { border-color: #22d3ee; background: #0e7490; }
+.MapImportDialog button:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 620px) {
+  .MapImportOverlay { padding: 10px; }
+  .MapImportSourceTitle,
+  .MapImportLocal { align-items: stretch; flex-direction: column; }
+}
+
+.EditorContent {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.Toolbar {
+  width: 200px;
+  background-color: rgba(30, 30, 30, 0.95);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.ToolbarToggle:hover {
+  background-color: rgba(40, 40, 40, 0.95);
+  color: white;
+}
+
+.ToolbarOptions {
+  width: 200px;
+  background-color: rgba(30, 30, 30, 0.95);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  transition: width 0.3s ease;
+  overflow: hidden;
+}
+
+.ToolButton {
+  width: 100%;
+  padding: 12px;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.ToolButton:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.ToolButton.active {
+  background-color: rgba(33, 150, 243, 0.8);
+  border-color: rgba(33, 150, 243, 1);
+}
+
+.EditorCanvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.EditorMapCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.EditorMapCanvas.cursor-brush {
+  cursor: none;
+}
+
+.EditorMapCanvas.cursor-eraser {
+  cursor: none;
+}
+
+.BrushIndicator {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  z-index: 1000;
+}
+
+.BrushIndicator-eraser {
+  border: 2px solid rgba(255, 77, 77, 0.8);
+  background-color: rgba(255, 77, 77, 0.2);
+}
+
+.BrushIndicator-brush {
+  border: 2px solid rgba(33, 150, 243, 0.8);
+  background-color: rgba(33, 150, 243, 0.2);
+}
+
+.PropertyPanel {
+  width: 300px;
+  background-color: rgba(30, 30, 30, 0.95);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.PropertySection {
+  margin-bottom: 24px;
+}
+
+.PropertySection h3 {
+  margin: 0 0 16px 0;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.PropertyRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.PropertyRow label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  min-width: 80px;
+}
+
+.PropertyRow input {
+  flex: 1;
+  padding: 6px 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.PropertyRow input:focus {
+  outline: none;
+  border-color: rgba(33, 150, 243, 0.8);
+}
+
+.PropertyRow span {
+  color: white;
+  font-size: 14px;
+}
+
+.DeleteButton {
+  width: 100%;
+  padding: 8px;
+  background-color: rgba(255, 77, 77, 0.8);
+  color: white;
+  border: 1px solid rgba(255, 77, 77, 1);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+  margin-top: 12px;
+}
+
+.DeleteButton:hover {
+  background-color: rgba(255, 77, 77, 1);
+  border-color: rgba(255, 77, 77, 1);
+}
+
+.CloseButton {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 32px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.CloseButton:hover {
+  color: #ff6b6b;
+}
+
+.CoordinateDisplay {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background-color: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 12px 16px;
+  z-index: 10;
+  pointer-events: none;
+  user-select: none;
+  font-family: 'Courier New', monospace;
+}
+
+.CoordinateRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.CoordinateRow:last-child {
+  margin-bottom: 0;
+}
+
+.CoordinateLabel {
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 60px;
+}
+
+.CoordinateValue {
+  color: white;
+  font-weight: 500;
+}

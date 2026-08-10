@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+install/
+log/
+node_modules/
+dist/
+.playwright-cli/
+*.env
+!.env.example

@@ -44,3 +44,88 @@ Web 前端在其包目录单独安装依赖并生成 production bundle。部署�
 - PTP 服务：可选，不代替主机 NTP 时间有效性检查。
 
 切换正式服务前，先在版本化 staging 目录构建和执行零速度 smoke test。保留当前 unit 文件和源码路径作为回滚目标。
+
+## 已验证 staging
+
+```text
+/home/nvidia/Go2_Nav_ws_staging/go2-nav-a9e7854-20260810T1550
+SHA-256: 4a7fd30ee5df4d4d5a2b128da86fae177dc50f44ac843e987ee86191e6580b70
+```
+
+该目录已经通过 [2026-08-10 验证报告](verification-report-2026-08-10.md)中的零运动检查。
+带 `REJECTED-map-crlf` 后缀的旧目录不得部署。
+
+## 正式切换命令（尚未执行）
+
+先构建 release。目标机无 npm，但仓库已包含经过验证的 production bundle，构建脚本会检查后
+跳过前端重建。
+
+```bash
+set -Eeuo pipefail
+RELEASE=/home/nvidia/Go2_Nav_ws_staging/go2-nav-a9e7854-20260810T1550
+STAMP="$(date +%Y%m%d_%H%M%S)"
+ROLLBACK="/home/nvidia/Go2_Nav_ws_rollbacks/pre-a9e7854-${STAMP}"
+
+cd "$RELEASE"
+python3 scripts/map_bundle.py validate maps
+bash scripts/install.sh
+
+mkdir -p "$ROLLBACK/systemd" "$ROLLBACK/new-units"
+sudo cp -a /etc/systemd/system/go2-console.service "$ROLLBACK/systemd/"
+sudo cp -a /etc/systemd/system/go2-console-rosbridge.service "$ROLLBACK/systemd/"
+sudo cp -a /etc/systemd/system/go2-motion-sender.service "$ROLLBACK/systemd/"
+
+sudo systemctl stop go2-navigation.service go2-mapping.service 2>/dev/null || true
+sudo systemctl stop go2-console.service go2-console-rosbridge.service go2-motion-sender.service
+
+test -d /home/nvidia/Go2_Nav_ws
+test ! -L /home/nvidia/Go2_Nav_ws
+sudo mv /home/nvidia/Go2_Nav_ws "$ROLLBACK/workspace"
+sudo ln -s "$RELEASE" /home/nvidia/Go2_Nav_ws
+
+sudo install -m 0644 src/Go2_web_console/systemd/go2-console.service /etc/systemd/system/
+sudo install -m 0644 src/Go2_web_console/systemd/go2-console-rosbridge.service /etc/systemd/system/
+sudo install -m 0644 src/Go2_control_gateway/systemd/go2-motion-sender.service /etc/systemd/system/
+sudo install -m 0644 src/Go2_bringup/systemd/go2-navigation.service /etc/systemd/system/
+sudo install -m 0644 src/Go2_bringup/systemd/go2-mapping.service /etc/systemd/system/
+sudo install -m 0644 src/Go2_time_sync/config/ptp_sync.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+sudo systemctl enable go2-console-rosbridge.service go2-console.service go2-motion-sender.service
+sudo systemctl start go2-console-rosbridge.service go2-console.service go2-motion-sender.service
+```
+
+切换后不自动启动导航、建图或 PTP。先检查 Web、地图和控制状态；`eth0`、ACK、定位和急停状态
+全部通过后，才允许另行启动导航。
+
+```bash
+curl -f http://192.168.0.101:8080/
+bash scripts/check_system.sh --stage base
+systemctl --no-pager --full status go2-console.service go2-motion-sender.service
+```
+
+## 回滚命令
+
+以下命令假设使用上节生成的同一个 `ROLLBACK` 路径。所有新文件均移动到回滚目录，不直接
+删除。
+
+```bash
+set -Eeuo pipefail
+ROLLBACK=/home/nvidia/Go2_Nav_ws_rollbacks/pre-a9e7854-<切换时间戳>
+
+sudo systemctl stop go2-navigation.service go2-mapping.service 2>/dev/null || true
+sudo systemctl stop go2-console.service go2-console-rosbridge.service go2-motion-sender.service
+
+test -L /home/nvidia/Go2_Nav_ws
+sudo mv /home/nvidia/Go2_Nav_ws "$ROLLBACK/release-link"
+sudo mv "$ROLLBACK/workspace" /home/nvidia/Go2_Nav_ws
+
+sudo mv /etc/systemd/system/go2-navigation.service "$ROLLBACK/new-units/" 2>/dev/null || true
+sudo mv /etc/systemd/system/go2-mapping.service "$ROLLBACK/new-units/" 2>/dev/null || true
+sudo mv /etc/systemd/system/ptp_sync.service "$ROLLBACK/new-units/" 2>/dev/null || true
+sudo install -m 0644 "$ROLLBACK/systemd/go2-console.service" /etc/systemd/system/
+sudo install -m 0644 "$ROLLBACK/systemd/go2-console-rosbridge.service" /etc/systemd/system/
+sudo install -m 0644 "$ROLLBACK/systemd/go2-motion-sender.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start go2-console-rosbridge.service go2-console.service go2-motion-sender.service
+```

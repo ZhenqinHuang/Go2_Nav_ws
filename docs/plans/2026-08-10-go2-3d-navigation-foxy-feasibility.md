@@ -4,7 +4,7 @@
 
 **Goal:** 在不控制机器人运动、不中断现有 Nav2 部署的前提下，证明 KISS-Matcher、small_gicp、SCAN-Planner 和 PCT Planner 能在 Jetson Orin NX + ROS 2 Foxy 上用真实 Go2 数据满足 B 阶段集成的最低条件。
 
-**Architecture:** 本计划只建设一个隔离的可行性工作区、固定上游版本、最小注册探针、SCAN 影子链路和 PCT 离线链路。现有 FAST-LIO2/Nav2/Unitree 控制链保持不变；只有全部闸门通过后，才编写正式定位、全局规划、局部规划和安全监督节点。
+**Architecture:** 本计划只建设一个隔离的可行性工作区、固定上游版本、最小注册探针、SCAN 影子链路和 PCT 离线链路。现有 FAST-LIO2/Nav2、外载 UDP sender 和内载安全 gateway 保持不变；只有全部闸门通过后，才编写正式定位、全局规划、局部规划和导航安全否决节点。
 
 **Tech Stack:** Ubuntu 20.04, ROS 2 Foxy, JetPack/CUDA, C++17, Python 3.8, colcon/ament, pytest, rosbag2, PCL, KISS-Matcher, small_gicp, SCAN-Planner, PCT Planner, tegrastats.
 
@@ -12,10 +12,12 @@
 
 ## 执行约束
 
-- 实机路径统一使用 `/home/nvidia/Go2_Nav_ws_3dnav`，通过 Git worktree 与现有 `/home/nvidia/Go2_Nav_ws` 隔离。
+- 源码修改统一使用 `/home/nvidia/Go2_Nav_ws_3dnav` Git worktree，与 active workspace `/home/nvidia/Go2_Nav_ws` 隔离；需要在 Jetson 运行的候选复制到 `/home/nvidia/Go2_Nav_ws_staging/3d-nav-feasibility-<commit>-<timestamp>/` 后再构建和零运动验证。
 - 在本计划结束前，禁止发布到现有 `/cmd_vel`、Unitree Sport API 或 UDP 运动网关。
 - PCT 只做离线 Tomogram 和全局路线验证，不在此阶段移植成常驻 ROS 2 节点。
 - SCAN 所有控制输出必须 remap 到 `/go2_3d_shadow/cmd_vel`，且该话题没有运动执行订阅者。
+- 固定网络保持不变：`wlan0=192.168.0.101/24` 为唯一默认路由，`eth0=192.168.123.5/24` 只承载 `.18/.161`，`eth1=192.168.1.5/24` 只承载 MID360S `.158`；UDP gateway 固定为 `.18:15000`、Jetson ACK 为 `:15001`。
+- 不修改 Unitree DDS 使用 `eth0` 的配置，不启用外载 DDS，不直连 `192.168.123.161`，不改变现有 Web、控制租约、急停或双端 watchdog 边界。
 - 不提前引入地点检索、Elevation Mapping CuPy、楼梯策略或 Humble 兼容层。
 - 所有上游依赖必须固定完整 commit SHA；Foxy 补丁只处理实际复现的编译/运行差异。
 - 每个任务开始前使用 `@superpowers:test-driven-development`；每次提交前使用 `@superpowers:verification-before-completion`。
@@ -74,6 +76,13 @@ def test_baseline_capture_is_read_only_and_collects_required_evidence():
     assert "ros2 pkg list" in text
     assert "tegrastats" in text
     assert "git status --short" in text
+    assert "ip -br addr" in text
+    assert "ip route get 192.168.123.18" in text
+    assert "ip route get 192.168.123.161" in text
+    assert "ip route get 192.168.1.158" in text
+    assert "ip route get 1.1.1.1" in text
+    assert "15000|15001" in text
+    assert "go2-motion-sender.service" in text
     assert "apt upgrade" not in text
     assert "rm -rf" not in text
 ```
@@ -91,7 +100,7 @@ Expected: FAIL，原因是脚本不存在。
 
 **Step 4: 实现最小只读采集脚本**
 
-脚本必须只创建 `artifacts/3d_nav_feasibility/baseline/<timestamp>/`，并分别保存：系统/JetPack/CUDA、ROS doctor、topic 与类型、package 列表、TF 摘要、现有三个工作区 Git 状态、10 秒 `tegrastats`。不得安装、升级、停止或重启服务。
+脚本必须只创建 `artifacts/3d_nav_feasibility/baseline/<timestamp>/`，并分别保存：系统/JetPack/CUDA、ROS doctor、topic 与类型、package 列表、TF 摘要、现有三个工作区 Git 状态、10 秒 `tegrastats`、三张网卡地址、到 `.18/.161/.158/1.1.1.1` 的路由、UDP `15000/15001` 监听状态和 `go2-motion-sender.service` 只读状态。不得安装、升级、停止或重启服务。
 
 **Step 5: 验证并采集基线**
 
@@ -214,9 +223,12 @@ Expected: FAIL，构建脚本不存在。
 
 **Step 3: 实现并运行首次构建**
 
+先从 worktree 创建带 commit 和时间戳的 staging 副本；排除 `.git`、`build/`、`install/`、`log/`、`artifacts/` 和其他缓存。后续 Jetson 构建、SCAN 影子运行和 PCT 离线运行都在该 staging 路径完成，不在 active workspace 原地试部署。
+
 Run:
 
 ```bash
+cd /home/nvidia/Go2_Nav_ws_staging/3d-nav-feasibility-<commit>-<timestamp>
 bash scripts/3d_nav/build_foxy_feasibility.sh
 ```
 
@@ -357,7 +369,7 @@ Expected: FAIL，validator 不存在。
 
 **Step 4: 录制安全场景**
 
-机器人由人工遥控低速通过：平地、坡道、门槛、坑边替代物、低矮障碍、悬空横杆、静态阻塞和缓慢横穿障碍。此时新算法不连接控制链。
+rosbag 录制涉及人工遥控和非零速度，必须单独获得实机授权，并逐次记录设备、现场人员、速度上限、距离、急停操作员和停止条件。首次只执行无遮挡的 `0.5～1 m` 短距离；验证 ACK、双端 watchdog、急停与方向一致后，才能分批录制平地、坡道、门槛、坑边替代物、低矮障碍、悬空横杆、静态阻塞和缓慢横穿障碍。新算法始终不连接控制链，姿态动作不包含在本任务授权中。
 
 Run:
 
@@ -400,6 +412,7 @@ rosbag 与生成的运行日志不得提交到 Git；只记录 SHA-256、时长�
 - 所有控制输出 remap 到 `/go2_3d_shadow/cmd_vel`；
 - launch 参数 `shadow_mode` 默认为 `true`，为 `true` 时不启动任何 Unitree/UDP/Nav2 执行节点；
 - namespace 为 `/go2_3d_shadow`，避免污染现有节点。
+- `go2-motion-sender` 和其他运动执行节点不订阅 `/go2_3d_shadow/cmd_vel`。
 
 **Step 2: 运行测试并确认失败**
 
@@ -432,9 +445,10 @@ ros2 launch go2_3d_nav_bringup scan_shadow.launch.py shadow_mode:=true
 ros2 node info /go2_3d_shadow/scan_planner
 ros2 topic info /cmd_vel -v
 ros2 topic info /go2_3d_shadow/cmd_vel -v
+systemctl --no-pager --full status go2-motion-sender.service
 ```
 
-Expected: `/cmd_vel` 没有来自新链路的 publisher；影子 cmd_vel 没有运动执行 subscriber。
+Expected: `/cmd_vel` 没有来自新链路的 publisher；影子 cmd_vel 没有运动执行 subscriber，尤其没有 `go2-motion-sender`；现有 Nav2 和 sender 状态未被影子 launch 改变。
 
 **Step 5: 回放真实 bag**
 
@@ -549,7 +563,7 @@ git commit -m "test: benchmark foxy 3d navigation shadow stack"
 
 **Step 1: 写失败的接口契约测试**
 
-测试断言 YAML 明确列出每个输入/输出的 topic、type、frame、最低频率、最大 age、QoS 和 owner；至少包括 FAST-LIO2 odom、MID360 点云、D435i 深度、`initial_path`、SCAN 影子输出、定位结果和安全状态。禁止同一 TF edge 有两个 owner。
+测试断言 YAML 明确列出每个输入/输出的 topic、type、frame、最低频率、最大 age、QoS 和 owner；至少包括 FAST-LIO2 odom、MID360 点云、D435i 深度、`initial_path`、SCAN 影子输出、定位结果和安全状态。契约还必须记录固定网卡/IP/路由、UDP `15000/15001`、`fast_lio_localization_ros2` 对 `map -> odom` 的唯一 ownership，以及 Nav2/三维后端对 `/cmd_vel` 的互斥切换顺序。禁止同一 TF edge 有两个 owner，禁止 Nav2 和三维后端同时发布 `/cmd_vel`。
 
 **Step 2: 运行测试并确认失败**
 
@@ -563,7 +577,7 @@ Expected: FAIL，契约不存在。
 
 **Step 4: 作出决策**
 
-- 全部 PASS：结论 `GO`，冻结 `interface_contract.yaml`，下一份计划才实现正式定位与规划节点；
+- 全部 PASS：结论 `GO`，冻结 `interface_contract.yaml`，下一份计划才实现正式定位与规划节点；正式三维后端切换必须先归零、停止 Nav2、确认旧 publisher 消失，再启动新后端并验证 `/cmd_vel` 唯一 publisher；
 - 只有可修复的非安全项失败：`CONDITIONAL-GO`，列出一个有期限的补救任务；
 - PCT、SCAN 或资源闸门实质失败：`NO-GO`，回到设计文档比较候选替代，不继续堆适配层。
 
@@ -603,9 +617,8 @@ git commit -m "docs: record foxy 3d navigation feasibility gate"
 1. 全局定位状态机与平滑 `map -> odom`；
 2. PCT ROS 2 在线服务和地图版本绑定；
 3. SCAN 正式局部路线接口、D435i 质量门控与 Go2 包络；
-4. 路径监督、模式管理、独立安全监督；
+4. 路径监督、模式管理和接入现有外载仲裁的导航安全否决；
 5. B 阶段低速闭环和实景验收；
-6. B 稳定后集中迁移 Humble；
-7. 另立 C 阶段规则楼梯计划。
+6. B 稳定后集中迁移 Humble。
 
 这能把当前最大的不确定性限制在可丢弃的探针和薄适配层中，避免在 PCT/SCAN 尚未通过 Foxy 与 Jetson 实测前建设完整导航框架。

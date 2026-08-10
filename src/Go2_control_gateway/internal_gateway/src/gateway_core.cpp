@@ -61,8 +61,11 @@ std::optional<AckFrame> GatewayCore::handle(const ControlFrame& frame) {
   last_sequence_ = frame.sequence;
   last_valid_frame_at_ = now;
   has_valid_frame_ = true;
-  fault_ = FaultReason::kNone;
   sdk_code_ = 0;
+  if (frame.flags != ControlFlags::kNone || estop_latched_) {
+    return process_discrete(frame);
+  }
+  fault_ = FaultReason::kNone;
   return process_velocity(frame, now);
 }
 
@@ -151,14 +154,74 @@ std::optional<AckFrame> GatewayCore::process_velocity(
   return make_ack(frame);
 }
 
-AckFrame GatewayCore::make_ack(const ControlFrame& frame) const {
-  return make_ack(frame.session_id, frame.sequence, 0);
+std::optional<AckFrame> GatewayCore::process_discrete(
+    const ControlFrame& frame) {
+  if (frame.flags == ControlFlags::kEmergencyStop) {
+    if (!estop_latched_) {
+      force_locked(FaultReason::kEstop, 0, true);
+      estop_latched_ = true;
+    } else {
+      fault_ = FaultReason::kEstop;
+    }
+    return make_ack(frame, kAckCommandAccepted);
+  }
+
+  if (estop_latched_) {
+    if (frame.flags != ControlFlags::kResetEstop) {
+      fault_ = FaultReason::kEstop;
+      return make_ack(frame);
+    }
+    estop_latched_ = false;
+    fault_ = FaultReason::kNone;
+    sdk_code_ = 0;
+    return make_ack(frame, kAckCommandAccepted);
+  }
+
+  if (frame.flags == ControlFlags::kResetEstop) {
+    fault_ = FaultReason::kNone;
+    return make_ack(frame, kAckCommandAccepted);
+  }
+
+  if (frame.flags == ControlFlags::kStand ||
+      frame.flags == ControlFlags::kLie) {
+    if (moving_) {
+      const int stop_result = sport_api_.StopMove();
+      clear_motion_state();
+      if (stop_result != 0) {
+        force_locked(FaultReason::kSdk, stop_result, false);
+        return make_ack(frame);
+      }
+    }
+    const int result = frame.flags == ControlFlags::kStand
+                           ? sport_api_.BalanceStand()
+                           : sport_api_.StandDown();
+    if (result != 0) {
+      force_locked(FaultReason::kSdk, result, true);
+      return make_ack(frame);
+    }
+    posture_ = frame.flags == ControlFlags::kStand
+                   ? Posture::kStanding
+                   : Posture::kLying;
+    fault_ = FaultReason::kNone;
+    sdk_code_ = 0;
+    return make_ack(frame, kAckCommandAccepted);
+  }
+
+  fault_ = FaultReason::kNone;
+  return process_velocity(frame, clock_());
+}
+
+AckFrame GatewayCore::make_ack(const ControlFrame& frame,
+                               std::uint32_t extra_flags) const {
+  return make_ack(frame.session_id, frame.sequence, 0, extra_flags);
 }
 
 AckFrame GatewayCore::make_ack(std::uint64_t session_id,
                                std::uint64_t sequence,
-                               std::uint64_t token) const {
-  return AckFrame{session_id, sequence, token, state_, sdk_code_, fault_, 0};
+                               std::uint64_t token,
+                               std::uint32_t extra_flags) const {
+  return AckFrame{session_id, sequence, token, state_, sdk_code_, fault_,
+                  state_ack_flags() | extra_flags};
 }
 
 void GatewayCore::force_locked(FaultReason reason, std::int32_t sdk_code,
@@ -185,7 +248,20 @@ void GatewayCore::clear_motion_state() {
 }
 
 bool GatewayCore::valid_flags(ControlFlags flags) const {
-  return flags == ControlFlags::kNone;
+  return flags == ControlFlags::kNone ||
+         flags == ControlFlags::kEmergencyStop ||
+         flags == ControlFlags::kResetEstop ||
+         flags == ControlFlags::kStand || flags == ControlFlags::kLie;
+}
+
+std::uint32_t GatewayCore::state_ack_flags() const {
+  std::uint32_t flags = estop_latched_ ? kAckEstopLatched : 0U;
+  if (posture_ == Posture::kStanding) {
+    flags |= kAckPostureStanding;
+  } else if (posture_ == Posture::kLying) {
+    flags |= kAckPostureLying;
+  }
+  return flags;
 }
 
 }  // namespace go2_gateway

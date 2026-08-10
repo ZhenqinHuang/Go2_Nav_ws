@@ -13,6 +13,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from go2_control_gateway.protocol import (  # noqa: E402
     AckFrame,
+    AckFlags,
     ControlFlags,
     FaultReason,
     GatewayState,
@@ -45,7 +46,7 @@ def make_core(sender, clock, **config_overrides):
     return sender.SenderCore(config=config, clock=clock, session_id=101)
 
 
-def ack_for(packet, *, sdk_code=0, fault=FaultReason.NONE):
+def ack_for(packet, *, sdk_code=0, fault=FaultReason.NONE, flags=0):
     return AckFrame(
         session_id=packet.session_id,
         sequence=packet.sequence,
@@ -53,7 +54,7 @@ def ack_for(packet, *, sdk_code=0, fault=FaultReason.NONE):
         state=GatewayState.LOCKED,
         sdk_code=sdk_code,
         fault=fault,
-        flags=0,
+        flags=flags,
     )
 
 
@@ -270,3 +271,95 @@ def test_yaw_command_uses_configured_exponential_smoothing():
     assert core.next_packet().vyaw == pytest.approx(0.5)
     assert core.update_nav_cmd(0.0, 0.0, 1.0)
     assert core.next_packet().vyaw == pytest.approx(0.75)
+
+
+def test_emergency_stop_latches_and_rejects_new_velocity_until_acknowledged_reset():
+    sender = load_sender()
+    clock = FakeClock()
+    core = make_core(sender, clock)
+    mark_link_ready(core)
+    assert core.update_manual_cmd(0.2, 0.0, 0.0)
+    assert core.next_packet().vx == pytest.approx(0.2)
+
+    assert core.request_emergency_stop()
+    stop_packet = core.next_packet()
+    assert stop_packet.flags == ControlFlags.EMERGENCY_STOP
+    assert (stop_packet.vx, stop_packet.vy, stop_packet.vyaw) == (0.0, 0.0, 0.0)
+    assert core.estop_latched
+    assert not core.update_manual_cmd(0.2, 0.0, 0.0)
+    assert core.handle_ack(
+        ack_for(
+            stop_packet,
+            fault=FaultReason.ESTOP,
+            flags=AckFlags.ESTOP_LATCHED | AckFlags.COMMAND_ACCEPTED,
+        )
+    )
+
+    assert core.request_reset_emergency_stop()
+    reset_packet = core.next_packet()
+    assert reset_packet.flags == ControlFlags.RESET_ESTOP
+    assert core.handle_ack(
+        ack_for(reset_packet, flags=AckFlags.COMMAND_ACCEPTED)
+    )
+    assert not core.estop_latched
+    assert core.update_manual_cmd(0.2, 0.0, 0.0)
+
+
+def test_estop_reset_requires_idle_nav_fresh_link_and_localization():
+    sender = load_sender()
+    clock = FakeClock()
+    core = make_core(
+        sender,
+        clock,
+        localization_guard_enabled=True,
+        localization_timeout_sec=0.5,
+    )
+    core.request_emergency_stop()
+    assert not core.request_reset_emergency_stop()
+
+    stop_packet = core.next_packet()
+    assert core.handle_ack(
+        ack_for(
+            stop_packet,
+            fault=FaultReason.ESTOP,
+            flags=AckFlags.ESTOP_LATCHED | AckFlags.COMMAND_ACCEPTED,
+        )
+    )
+    assert not core.request_reset_emergency_stop()
+    core.update_localization(0.0, 0.0, 0.0)
+    core.set_nav_active(True)
+    assert not core.request_reset_emergency_stop()
+    core.set_nav_active(False)
+    assert core.request_reset_emergency_stop()
+
+
+def test_posture_commands_require_zero_speed_idle_nav_and_internal_ack():
+    sender = load_sender()
+    clock = FakeClock()
+    core = make_core(sender, clock)
+    mark_link_ready(core)
+
+    core.set_nav_active(True)
+    assert not core.request_posture("stand")
+    core.set_nav_active(False)
+    assert core.request_posture("stand")
+    stand_packet = core.next_packet()
+    assert stand_packet.flags == ControlFlags.STAND
+    assert core.handle_ack(
+        ack_for(
+            stand_packet,
+            flags=AckFlags.COMMAND_ACCEPTED | AckFlags.POSTURE_STANDING,
+        )
+    )
+    assert core.posture == "standing"
+
+    assert core.request_posture("lie")
+    lie_packet = core.next_packet()
+    assert lie_packet.flags == ControlFlags.LIE
+    assert core.handle_ack(
+        ack_for(
+            lie_packet,
+            flags=AckFlags.COMMAND_ACCEPTED | AckFlags.POSTURE_LYING,
+        )
+    )
+    assert core.posture == "lying"

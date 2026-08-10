@@ -56,6 +56,22 @@ int main() {
   require(std::fabs(control.vyaw + 0.3F) < 1e-6F, "control vyaw");
   require(encode_control(control) == control_golden, "control golden encode");
 
+  for (const auto command : {
+           ControlFlags::kEmergencyStop,
+           ControlFlags::kResetEstop,
+           ControlFlags::kStand,
+           ControlFlags::kLie,
+       }) {
+    ControlFrame command_frame{1, 2, 0, command, 0.0F, 0.0F, 0.0F};
+    const auto encoded = encode_control(command_frame);
+    require(encoded.size() == kControlFrameSize,
+            "discrete command keeps fixed frame size");
+    ControlFrame decoded{};
+    require(decode_control(encoded.data(), encoded.size(), decoded, &error),
+            "discrete command decodes");
+    require(decoded.flags == command, "discrete command round trips");
+  }
+
   AckFrame ack{};
   require(decode_ack(ack_golden.data(), ack_golden.size(), ack, &error),
           error.c_str());

@@ -62,6 +62,60 @@ def test_protocol_frame_sizes_are_fixed():
     assert protocol.ACK_FRAME_SIZE == 56
 
 
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "EMERGENCY_STOP",
+        "RESET_ESTOP",
+        "STAND",
+        "LIE",
+    ],
+)
+def test_discrete_commands_round_trip_without_changing_frame_size(flag):
+    protocol = load_protocol()
+    command = getattr(protocol.ControlFlags, flag)
+    frame = protocol.ControlFrame(
+        session_id=1,
+        sequence=2,
+        arm_token=0,
+        flags=command,
+        vx=0.0,
+        vy=0.0,
+        vyaw=0.0,
+    )
+
+    assert len(protocol.encode_control(frame)) == 56
+    assert protocol.decode_control(protocol.encode_control(frame)) == frame
+
+
+def test_discrete_commands_reject_motion_and_flag_combinations():
+    protocol = load_protocol()
+
+    with pytest.raises(protocol.ProtocolError):
+        protocol.ControlFrame(
+            session_id=1,
+            sequence=2,
+            arm_token=0,
+            flags=protocol.ControlFlags.STAND,
+            vx=0.1,
+            vy=0.0,
+            vyaw=0.0,
+        )
+    with pytest.raises(protocol.ProtocolError):
+        protocol.ControlFrame(
+            session_id=1,
+            sequence=2,
+            arm_token=0,
+            flags=(
+                protocol.ControlFlags.STAND
+                | protocol.ControlFlags.EMERGENCY_STOP
+            ),
+            vx=0.0,
+            vy=0.0,
+            vyaw=0.0,
+        )
+
+
 def test_control_matches_cross_language_golden_vector():
     protocol = load_protocol()
     payload = protocol.encode_control(valid_control(protocol))

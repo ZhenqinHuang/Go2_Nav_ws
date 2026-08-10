@@ -13,7 +13,14 @@ import secrets
 import time
 from typing import Callable, Optional, Tuple
 
-from .protocol import AckFrame, ControlFlags, ControlFrame, FaultReason, GatewayState
+from .protocol import (
+    AckFlags,
+    AckFrame,
+    ControlFlags,
+    ControlFrame,
+    FaultReason,
+    GatewayState,
+)
 
 
 Velocity = Tuple[float, float, float]
@@ -94,6 +101,10 @@ class SenderCore:
         self._localization: Optional[Velocity] = None
         self._localization_at: Optional[float] = None
         self._motion_paused_until = 0.0
+        self._estop_latched = False
+        self._pending_command = ControlFlags.NONE
+        self._pending_command_sequence: Optional[int] = None
+        self._posture = "unknown"
 
     @property
     def control_ready(self) -> bool:
@@ -104,6 +115,32 @@ class SenderCore:
     @property
     def nav_active(self) -> bool:
         return self._nav_active
+
+    @property
+    def estop_latched(self) -> bool:
+        return self._estop_latched
+
+    @property
+    def posture(self) -> str:
+        return self._posture
+
+    @property
+    def command_pending(self) -> bool:
+        return self._pending_command != ControlFlags.NONE
+
+    @property
+    def active_source(self) -> str:
+        if self._estop_latched:
+            return "emergency_stop"
+        if self._nav_active:
+            return "navigation"
+        if self._selected_velocity(self._clock()) != (0.0, 0.0, 0.0):
+            return "manual"
+        return "idle"
+
+    @property
+    def localization_ready(self) -> bool:
+        return self._localization_allows_motion(self._clock())
 
     def _new_nonzero_id(self) -> int:
         for _ in range(1024):
@@ -120,6 +157,8 @@ class SenderCore:
         self.clear_commands()
 
     def update_nav_cmd(self, vx: float, vy: float, vyaw: float) -> bool:
+        if self._estop_latched:
+            return False
         value = self._sanitize_velocity(vx, vy, vyaw)
         now = self._clock()
         if value is None:
@@ -131,7 +170,7 @@ class SenderCore:
         return True
 
     def update_manual_cmd(self, vx: float, vy: float, vyaw: float) -> bool:
-        if self._nav_active:
+        if self._nav_active or self._estop_latched:
             return False
         value = self._sanitize_velocity(vx, vy, vyaw)
         now = self._clock()
@@ -165,6 +204,45 @@ class SenderCore:
         self._localization_at = now
         return True
 
+    def request_emergency_stop(self) -> bool:
+        self.clear_commands()
+        self._estop_latched = True
+        self._pending_command = ControlFlags.EMERGENCY_STOP
+        self._pending_command_sequence = None
+        return True
+
+    def request_reset_emergency_stop(self) -> bool:
+        if not self._estop_latched:
+            return False
+        if self._nav_active or not self.control_ready or not self.localization_ready:
+            return False
+        self.clear_commands()
+        self._pending_command = ControlFlags.RESET_ESTOP
+        self._pending_command_sequence = None
+        return True
+
+    def request_posture(self, posture: str) -> bool:
+        normalized = str(posture).strip().lower()
+        command = {
+            "stand": ControlFlags.STAND,
+            "lie": ControlFlags.LIE,
+        }.get(normalized)
+        if command is None:
+            return False
+        if (
+            self._estop_latched
+            or self._nav_active
+            or not self.control_ready
+            or not self.localization_ready
+            or self._pending_command != ControlFlags.NONE
+            or self._selected_velocity(self._clock()) != (0.0, 0.0, 0.0)
+        ):
+            return False
+        self.clear_commands()
+        self._pending_command = command
+        self._pending_command_sequence = None
+        return True
+
     def handle_ack(self, ack: AckFrame) -> bool:
         if ack.session_id != self._session_id:
             return False
@@ -176,13 +254,32 @@ class SenderCore:
             return False
 
         self._last_ack_sequence = ack.sequence
+        if ack.flags & AckFlags.ESTOP_LATCHED or ack.fault == FaultReason.ESTOP:
+            self._estop_latched = True
+
         if ack.sdk_code != 0 or ack.fault not in (
             FaultReason.NONE,
             FaultReason.WATCHDOG,
+            FaultReason.ESTOP,
         ):
             self._last_ack_at = None
             self.clear_commands()
             return True
+
+        if (
+            self._pending_command_sequence is not None
+            and ack.sequence >= self._pending_command_sequence
+            and ack.flags & AckFlags.COMMAND_ACCEPTED
+        ):
+            completed = self._pending_command
+            self._pending_command = ControlFlags.NONE
+            self._pending_command_sequence = None
+            if completed == ControlFlags.RESET_ESTOP:
+                self._estop_latched = bool(ack.flags & AckFlags.ESTOP_LATCHED)
+            if ack.flags & AckFlags.POSTURE_STANDING:
+                self._posture = "standing"
+            elif ack.flags & AckFlags.POSTURE_LYING:
+                self._posture = "lying"
 
         self._last_ack_at = self._clock()
         return True
@@ -193,17 +290,20 @@ class SenderCore:
         self._sequence += 1
         self._last_sent_sequence = self._sequence
 
-        velocity = (
-            self._selected_velocity(now)
-            if self.control_ready
-            else (0.0, 0.0, 0.0)
-        )
+        flags = self._pending_command
+        if flags == ControlFlags.NONE and self._estop_latched:
+            flags = ControlFlags.EMERGENCY_STOP
+        if flags != ControlFlags.NONE and self._pending_command_sequence is None:
+            self._pending_command_sequence = self._sequence
+        velocity = (0.0, 0.0, 0.0)
+        if flags == ControlFlags.NONE and self.control_ready:
+            velocity = self._selected_velocity(now)
         velocity = self._hard_limit(*velocity)
         return ControlFrame(
             session_id=self._session_id,
             sequence=self._sequence,
             arm_token=0,
-            flags=ControlFlags.NONE,
+            flags=flags,
             vx=velocity[0],
             vy=velocity[1],
             vyaw=velocity[2],

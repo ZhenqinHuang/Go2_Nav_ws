@@ -22,6 +22,7 @@ class NetworkConfig:
     remote_port: int = 15000
     send_hz: float = 20.0
     receive_timeout_sec: float = 0.1
+    bind_retry_sec: float = 5.0
 
     def __post_init__(self) -> None:
         for name in ("local_port", "remote_port"):
@@ -35,6 +36,10 @@ class NetworkConfig:
             or self.receive_timeout_sec <= 0.0
         ):
             raise ValueError("receive_timeout_sec must be finite and positive")
+        if not math.isfinite(self.bind_retry_sec) or self.bind_retry_sec <= 0.0:
+            raise ValueError("bind_retry_sec must be finite and positive")
+
+
 class UdpSenderAdapter:
     """Thread-safe socket adapter around :class:`SenderCore`."""
 
@@ -52,15 +57,17 @@ class UdpSenderAdapter:
         self._clock = clock
         self._waiter = waiter
         self._core_lock = threading.RLock()
+        self._command_condition = threading.Condition(self._core_lock)
         self._send_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._receiver_thread: Optional[threading.Thread] = None
         self._last_valid_ack_at: Optional[float] = None
         self._closed = False
-
-        self._socket = socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.bind((self.config.local_ip, self.config.local_port))
-        self._socket.settimeout(self.config.receive_timeout_sec)
+        self._socket_factory = socket_factory
+        self._socket: Optional[socket.socket] = None
+        self._network_error: Optional[str] = None
+        self._next_bind_attempt_at = 0.0
+        self._ensure_socket()
 
     @property
     def destination(self) -> tuple[str, int]:
@@ -88,6 +95,9 @@ class UdpSenderAdapter:
             packet = self.core.next_packet()
             payload = encode_control(packet)
         with self._send_lock:
+            if not self._ensure_socket():
+                raise OSError(self._network_error or "control network unavailable")
+            assert self._socket is not None
             return self._socket.sendto(payload, self.destination)
 
     def handle_datagram(self, payload: bytes, source: tuple[str, int]) -> bool:
@@ -101,6 +111,7 @@ class UdpSenderAdapter:
             accepted = self.core.handle_ack(ack)
             if accepted:
                 self._last_valid_ack_at = self._clock()
+                self._command_condition.notify_all()
             return accepted
 
     def set_nav_active(self, active: bool) -> None:
@@ -119,8 +130,45 @@ class UdpSenderAdapter:
         with self._core_lock:
             return self.core.update_localization(x, y, yaw)
 
+    def request_emergency_stop(self) -> bool:
+        with self._core_lock:
+            return self.core.request_emergency_stop()
+
+    def request_reset_emergency_stop(self) -> bool:
+        with self._core_lock:
+            return self.core.request_reset_emergency_stop()
+
+    def request_posture(self, posture: str) -> bool:
+        with self._core_lock:
+            return self.core.request_posture(posture)
+
+    def emergency_stop(self, timeout_sec: float = 1.0) -> bool:
+        return self._execute_command(
+            self.request_emergency_stop,
+            lambda: self.core.estop_latched and not self.core.command_pending,
+            timeout_sec,
+        )
+
+    def reset_emergency_stop(self, timeout_sec: float = 1.0) -> bool:
+        return self._execute_command(
+            self.request_reset_emergency_stop,
+            lambda: not self.core.estop_latched and not self.core.command_pending,
+            timeout_sec,
+        )
+
+    def set_posture(self, posture: str, timeout_sec: float = 2.0) -> bool:
+        expected = "standing" if posture == "stand" else "lying"
+        return self._execute_command(
+            lambda: self.request_posture(posture),
+            lambda: self.core.posture == expected and not self.core.command_pending,
+            timeout_sec,
+        )
+
     def status_json(self) -> str:
         now = self._clock()
+        with self._send_lock:
+            network_ready = self._socket is not None
+            network_error = self._network_error
         with self._core_lock:
             last_ack_age = (
                 None
@@ -131,10 +179,36 @@ class UdpSenderAdapter:
                 last_ack_age is not None
                 and last_ack_age <= self.core.config.ack_timeout_sec
             )
+            localization_ready = self.core.localization_ready
+            estop_latched = self.core.estop_latched
+            control_ready = (
+                link_online
+                and self.core.control_ready
+                and localization_ready
+                and not estop_latched
+            )
+            if not network_ready:
+                block_reason = "control_network_unavailable"
+            elif estop_latched:
+                block_reason = "estop_latched"
+            elif not link_online or not self.core.control_ready:
+                block_reason = "gateway_ack_stale"
+            elif not localization_ready:
+                block_reason = "localization_stale"
+            else:
+                block_reason = None
             status = {
                 "gateway_link": "online" if link_online else "offline",
-                "control_ready": link_online and self.core.control_ready,
+                "network_ready": network_ready,
+                "network_error": network_error,
+                "control_ready": control_ready,
+                "localization_ready": localization_ready,
                 "nav_active": self.core.nav_active,
+                "active_source": self.core.active_source,
+                "estop_latched": estop_latched,
+                "posture": self.core.posture,
+                "command_pending": self.core.command_pending,
+                "block_reason": block_reason,
                 "last_ack_age_sec": (
                     None if last_ack_age is None else round(last_ack_age, 3)
                 ),
@@ -162,18 +236,68 @@ class UdpSenderAdapter:
                 self._waiter(repeat_interval_sec)
         if self._receiver_thread and self._receiver_thread.is_alive():
             self._receiver_thread.join(timeout=0.3)
-        self._socket.close()
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
         self._closed = True
 
     def _receive_loop(self) -> None:
         while not self._stop_event.is_set():
+            with self._send_lock:
+                self._ensure_socket()
+                active_socket = self._socket
+            if active_socket is None:
+                self._stop_event.wait(min(0.5, self.config.bind_retry_sec))
+                continue
             try:
-                payload, source = self._socket.recvfrom(2048)
+                payload, source = active_socket.recvfrom(2048)
             except socket.timeout:
                 continue
             except OSError:
                 break
             self.handle_datagram(payload, source)
+
+    def _ensure_socket(self) -> bool:
+        if self._socket is not None:
+            return True
+        now = self._clock()
+        if now < self._next_bind_attempt_at:
+            return False
+        candidate = self._socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            candidate.bind((self.config.local_ip, self.config.local_port))
+            candidate.settimeout(self.config.receive_timeout_sec)
+        except OSError as exc:
+            candidate.close()
+            self._network_error = str(exc)
+            self._next_bind_attempt_at = now + self.config.bind_retry_sec
+            return False
+        self._socket = candidate
+        self._network_error = None
+        self._next_bind_attempt_at = 0.0
+        return True
+
+    def _execute_command(
+        self,
+        request: Callable[[], bool],
+        completed: Callable[[], bool],
+        timeout_sec: float,
+    ) -> bool:
+        timeout_sec = max(0.0, float(timeout_sec))
+        if not request():
+            return False
+        try:
+            self.send_once()
+        except OSError:
+            pass
+        deadline = time.monotonic() + timeout_sec
+        with self._command_condition:
+            while not completed():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return False
+                self._command_condition.wait(timeout=min(remaining, 0.1))
+            return True
 
 
 try:
@@ -185,6 +309,7 @@ try:
     from rclpy.executors import MultiThreadedExecutor
     from rclpy.node import Node
     from std_msgs.msg import String
+    from std_srvs.srv import Trigger
 except ImportError:  # Allows protocol/adapter tests on a non-ROS development host.
     rclpy = None
     Node = object
@@ -205,6 +330,7 @@ if rclpy is not None:
                 ("remote_ip", network_defaults.remote_ip),
                 ("remote_port", network_defaults.remote_port),
                 ("send_hz", network_defaults.send_hz),
+                ("bind_retry_sec", network_defaults.bind_retry_sec),
                 ("max_vx", sender_defaults.max_vx),
                 ("max_vy", sender_defaults.max_vy),
                 ("max_vyaw", sender_defaults.max_vyaw),
@@ -243,6 +369,7 @@ if rclpy is not None:
                 remote_ip=self.get_parameter("remote_ip").value,
                 remote_port=self.get_parameter("remote_port").value,
                 send_hz=self.get_parameter("send_hz").value,
+                bind_retry_sec=self.get_parameter("bind_retry_sec").value,
             )
             sender_config = SenderConfig(
                 max_vx=self.get_parameter("max_vx").value,
@@ -285,6 +412,30 @@ if rclpy is not None:
                 self.get_parameter("cmd_vel_topic").value,
                 self._nav_cmd_callback,
                 10,
+                callback_group=callback_group,
+            )
+            self.create_service(
+                Trigger,
+                "/go2_cmd_vel_gateway/stand_up",
+                self._stand_up_callback,
+                callback_group=callback_group,
+            )
+            self.create_service(
+                Trigger,
+                "/go2_cmd_vel_gateway/stand_down",
+                self._stand_down_callback,
+                callback_group=callback_group,
+            )
+            self.create_service(
+                Trigger,
+                "/go2_cmd_vel_gateway/emergency_stop",
+                self._emergency_stop_callback,
+                callback_group=callback_group,
+            )
+            self.create_service(
+                Trigger,
+                "/go2_cmd_vel_gateway/reset_emergency_stop",
+                self._reset_emergency_stop_callback,
                 callback_group=callback_group,
             )
             self.create_subscription(
@@ -365,6 +516,38 @@ if rclpy is not None:
             # ACCEPTED, EXECUTING, and CANCELING all keep manual control locked.
             active = any(item.status in (1, 2, 3) for item in message.status_list)
             self._adapter.set_nav_active(active)
+
+        def _stand_up_callback(self, _request, response):
+            response.success = self._adapter.set_posture("stand")
+            response.message = (
+                "stand acknowledged" if response.success else "stand blocked or timed out"
+            )
+            return response
+
+        def _stand_down_callback(self, _request, response):
+            response.success = self._adapter.set_posture("lie")
+            response.message = (
+                "lie acknowledged" if response.success else "lie blocked or timed out"
+            )
+            return response
+
+        def _emergency_stop_callback(self, _request, response):
+            response.success = self._adapter.emergency_stop()
+            response.message = (
+                "emergency stop acknowledged"
+                if response.success
+                else "emergency stop latched locally; internal ACK timed out"
+            )
+            return response
+
+        def _reset_emergency_stop_callback(self, _request, response):
+            response.success = self._adapter.reset_emergency_stop()
+            response.message = (
+                "emergency stop reset acknowledged"
+                if response.success
+                else "reset blocked or timed out"
+            )
+            return response
 
         def destroy_node(self):
             self._adapter.shutdown()

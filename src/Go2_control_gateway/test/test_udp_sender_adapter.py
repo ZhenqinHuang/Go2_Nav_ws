@@ -11,6 +11,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from go2_control_gateway.protocol import (  # noqa: E402
+    AckFlags,
     AckFrame,
     ControlFlags,
     FaultReason,
@@ -51,6 +52,12 @@ class FakeSocket:
 
     def close(self):
         self.closed = True
+
+
+class FailingBindSocket(FakeSocket):
+    def bind(self, address):
+        self.bound = address
+        raise OSError(99, "address not available")
 
 
 def load_adapter():
@@ -187,3 +194,123 @@ def test_shutdown_repeats_plain_zero_frames():
         for packet in shutdown_packets
     )
     assert fake_socket.closed
+
+
+def test_adapter_exposes_latched_estop_reset_and_posture_commands():
+    module = load_adapter()
+    adapter, core, fake_socket, _clock = make_adapter(module)
+    establish_link(adapter, fake_socket)
+
+    assert adapter.request_emergency_stop()
+    adapter.send_once()
+    stop_packet = decode_control(fake_socket.sent[-1][0])
+    assert stop_packet.flags == ControlFlags.EMERGENCY_STOP
+    assert adapter.handle_datagram(
+        encode_ack(
+            AckFrame(
+                session_id=stop_packet.session_id,
+                sequence=stop_packet.sequence,
+                arm_token=0,
+                state=GatewayState.LOCKED,
+                sdk_code=0,
+                fault=FaultReason.ESTOP,
+                flags=AckFlags.ESTOP_LATCHED | AckFlags.COMMAND_ACCEPTED,
+            )
+        ),
+        adapter.destination,
+    )
+    assert core.estop_latched
+
+    assert adapter.request_reset_emergency_stop()
+    adapter.send_once()
+    reset_packet = decode_control(fake_socket.sent[-1][0])
+    assert reset_packet.flags == ControlFlags.RESET_ESTOP
+    assert adapter.handle_datagram(
+        encode_ack(
+            AckFrame(
+                session_id=reset_packet.session_id,
+                sequence=reset_packet.sequence,
+                arm_token=0,
+                state=GatewayState.LOCKED,
+                sdk_code=0,
+                fault=FaultReason.NONE,
+                flags=AckFlags.COMMAND_ACCEPTED,
+            )
+        ),
+        adapter.destination,
+    )
+    assert not core.estop_latched
+
+    assert adapter.request_posture("stand")
+    adapter.send_once()
+    stand_packet = decode_control(fake_socket.sent[-1][0])
+    assert stand_packet.flags == ControlFlags.STAND
+
+
+def test_status_json_reports_single_control_state_and_exact_block_reason():
+    module = load_adapter()
+    adapter, _core, fake_socket, _clock = make_adapter(module)
+
+    offline = json.loads(adapter.status_json())
+    assert offline["control_ready"] is False
+    assert offline["block_reason"] == "gateway_ack_stale"
+    assert offline["active_source"] == "idle"
+    assert offline["estop_latched"] is False
+    assert offline["posture"] == "unknown"
+    assert "localization_ready" in offline
+
+    establish_link(adapter, fake_socket)
+    ready = json.loads(adapter.status_json())
+    assert ready["control_ready"] is True
+    assert ready["block_reason"] is None
+
+    adapter.request_emergency_stop()
+    stopped = json.loads(adapter.status_json())
+    assert stopped["control_ready"] is False
+    assert stopped["block_reason"] == "estop_latched"
+    assert stopped["active_source"] == "emergency_stop"
+
+
+def test_missing_control_address_enters_wait_state_and_recovers_without_restart():
+    module = load_adapter()
+    clock = FakeClock()
+    failed_socket = FailingBindSocket()
+    recovered_socket = FakeSocket()
+    sockets = iter((failed_socket, recovered_socket))
+    core = SenderCore(
+        config=SenderConfig(localization_guard_enabled=False),
+        clock=clock,
+        session_id=101,
+    )
+    adapter = module.UdpSenderAdapter(
+        core=core,
+        config=module.NetworkConfig(bind_retry_sec=5.0),
+        socket_factory=lambda *_args: next(sockets),
+        clock=clock,
+        waiter=clock.wait,
+    )
+
+    waiting = json.loads(adapter.status_json())
+    assert waiting["network_ready"] is False
+    assert waiting["block_reason"] == "control_network_unavailable"
+    with pytest.raises(OSError):
+        adapter.send_once()
+
+    clock.wait(5.0)
+    assert adapter.send_once() > 0
+    assert recovered_socket.bound == ("192.168.123.5", 15001)
+
+
+def test_ros_node_exposes_only_gateway_backed_posture_and_estop_services():
+    source = (PACKAGE_ROOT / "go2_control_gateway" / "udp_sender_node.py").read_text(
+        encoding="utf-8"
+    )
+
+    for service in (
+        "/go2_cmd_vel_gateway/stand_up",
+        "/go2_cmd_vel_gateway/stand_down",
+        "/go2_cmd_vel_gateway/emergency_stop",
+        "/go2_cmd_vel_gateway/reset_emergency_stop",
+    ):
+        assert service in source
+    assert "/api/sport/request" not in source

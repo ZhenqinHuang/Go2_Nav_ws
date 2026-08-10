@@ -20,6 +20,7 @@ class SyncUnitreeSportApi final : public SportApi {
   }
 
   int BalanceStand() override { return client_->BalanceStand(); }
+  int StandDown() override { return client_->StandDown(); }
 
   int Move(float vx, float vy, float vyaw) override {
     return client_->Move(vx, vy, vyaw);

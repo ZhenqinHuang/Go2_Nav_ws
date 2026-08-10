@@ -39,6 +39,11 @@ class FakeSportApi final : public go2_gateway::SportApi {
     return stop_result;
   }
 
+  int StandDown() override {
+    ++lie_calls;
+    return lie_result;
+  }
+
   int PollError() override {
     const int result = poll_error;
     poll_error = 0;
@@ -48,9 +53,11 @@ class FakeSportApi final : public go2_gateway::SportApi {
   int balance_calls{0};
   int move_calls{0};
   int stop_calls{0};
+  int lie_calls{0};
   int balance_result{0};
   int move_result{0};
   int stop_result{0};
+  int lie_result{0};
   int poll_error{0};
   float last_vx{0.0F};
   float last_vy{0.0F};
@@ -234,6 +241,66 @@ void test_sdk_failures_stop_motion() {
   }
 }
 
+void test_estop_is_latched_until_explicit_reset() {
+  FakeClock clock;
+  FakeSportApi api;
+  go2_gateway::GatewayCore core(api, [&clock] { return clock(); });
+  require(static_cast<bool>(core.handle(frame(1, 0.2F))), "motion starts");
+
+  clock.now = 0.1;
+  const auto stopped = core.handle(frame(
+      2, 0.0F, 0.0F, 0.0F, 101, 0,
+      go2_gateway::ControlFlags::kEmergencyStop));
+  require(stopped &&
+              stopped->fault == go2_gateway::FaultReason::kEstop,
+          "emergency stop reports latched fault");
+  require((stopped->flags & go2_gateway::kAckEstopLatched) != 0U,
+          "ACK exposes estop latch");
+  require(api.stop_calls == 2, "estop stops active motion once");
+
+  clock.now = 0.2;
+  const auto blocked = core.handle(frame(3, 0.2F));
+  require(blocked &&
+              blocked->fault == go2_gateway::FaultReason::kEstop,
+          "latched gateway ACKs but blocks velocity");
+  require(api.move_calls == 1, "latched gateway never resumes Move");
+
+  clock.now = 0.3;
+  const auto reset = core.handle(frame(
+      4, 0.0F, 0.0F, 0.0F, 101, 0,
+      go2_gateway::ControlFlags::kResetEstop));
+  require(reset && reset->fault == go2_gateway::FaultReason::kNone,
+          "explicit reset clears estop");
+  require((reset->flags & go2_gateway::kAckCommandAccepted) != 0U,
+          "reset is correlated in ACK");
+
+  clock.now = 0.4;
+  require(static_cast<bool>(core.handle(frame(5, 0.2F))),
+          "velocity resumes only after reset");
+  require(api.move_calls == 2, "post-reset Move reaches Sport API");
+}
+
+void test_stand_and_lie_are_zero_speed_acknowledged_commands() {
+  FakeClock clock;
+  FakeSportApi api;
+  go2_gateway::GatewayCore core(api, [&clock] { return clock(); });
+
+  const auto stand = core.handle(frame(
+      1, 0.0F, 0.0F, 0.0F, 101, 0,
+      go2_gateway::ControlFlags::kStand));
+  require(stand && api.balance_calls == 1, "stand calls BalanceStand");
+  require((stand->flags & go2_gateway::kAckPostureStanding) != 0U,
+          "stand posture is acknowledged");
+
+  clock.now = 0.1;
+  const auto lie = core.handle(frame(
+      2, 0.0F, 0.0F, 0.0F, 101, 0,
+      go2_gateway::ControlFlags::kLie));
+  require(lie && api.lie_calls == 1, "lie calls StandDown");
+  require((lie->flags & go2_gateway::kAckPostureLying) != 0U,
+          "lie posture is acknowledged");
+}
+
 }  // namespace
 
 int main() {
@@ -244,6 +311,8 @@ int main() {
   test_replay_and_watchdog_stop_motion();
   test_session_change_stops_before_accepting_new_session();
   test_sdk_failures_stop_motion();
+  test_estop_is_latched_until_explicit_reset();
+  test_stand_and_lie_are_zero_speed_acknowledged_commands();
   std::cout << "gateway_core_test: PASS\n";
   return 0;
 }

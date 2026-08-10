@@ -5,6 +5,7 @@ go2_cmd_vel_udp_sender:
     remote_ip: "192.168.123.18"
     remote_port: 15000
     send_hz: 20.0
+    bind_retry_sec: 5.0
 
     cmd_vel_topic: "/cmd_vel"
     manual_cmd_vel_topic: "/go2/manual_cmd_vel"

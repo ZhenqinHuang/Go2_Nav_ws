@@ -32,6 +32,12 @@ class RecordingSportApi final : public go2_gateway::SportApi {
     return 0;
   }
 
+  int StandDown() override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++lie_calls_;
+    return 0;
+  }
+
   int Move(float vx, float vy, float vyaw) override {
     std::unique_lock<std::mutex> lock(mutex_);
     moves_.emplace_back(vx, vy, vyaw);
@@ -120,6 +126,7 @@ class RecordingSportApi final : public go2_gateway::SportApi {
   std::vector<std::tuple<float, float, float>> moves_;
   int balance_calls_{0};
   int stop_calls_{0};
+  int lie_calls_{0};
   int move_result_{0};
   bool block_moves_{false};
   bool block_balance_{false};

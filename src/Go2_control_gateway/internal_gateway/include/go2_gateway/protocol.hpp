@@ -22,7 +22,16 @@ enum class ControlFlags : std::uint32_t {
   kNone = 0,
   kArmRequest = 1U << 0,
   kDisarm = 1U << 1,
+  kEmergencyStop = 1U << 2,
+  kResetEstop = 1U << 3,
+  kStand = 1U << 4,
+  kLie = 1U << 5,
 };
+
+constexpr std::uint32_t kAckEstopLatched = 1U << 0;
+constexpr std::uint32_t kAckCommandAccepted = 1U << 1;
+constexpr std::uint32_t kAckPostureStanding = 1U << 2;
+constexpr std::uint32_t kAckPostureLying = 1U << 3;
 
 enum class GatewayState : std::uint32_t {
   kLocked = 0,
@@ -38,6 +47,7 @@ enum class FaultReason : std::uint32_t {
   kSdk = 3,
   kExplicitDisarm = 4,
   kShutdown = 5,
+  kEstop = 6,
 };
 
 struct ControlFrame {
@@ -215,9 +225,13 @@ inline bool decode_control(const std::uint8_t* data, std::size_t size,
   const auto raw_flags = detail::read_u32(data + 36);
   constexpr std::uint32_t known_flags =
       static_cast<std::uint32_t>(ControlFlags::kArmRequest) |
-      static_cast<std::uint32_t>(ControlFlags::kDisarm);
+      static_cast<std::uint32_t>(ControlFlags::kDisarm) |
+      static_cast<std::uint32_t>(ControlFlags::kEmergencyStop) |
+      static_cast<std::uint32_t>(ControlFlags::kResetEstop) |
+      static_cast<std::uint32_t>(ControlFlags::kStand) |
+      static_cast<std::uint32_t>(ControlFlags::kLie);
   if ((raw_flags & ~known_flags) != 0U ||
-      raw_flags == known_flags) {
+      (raw_flags != 0U && (raw_flags & (raw_flags - 1U)) != 0U)) {
     detail::set_error(error, "invalid control flags");
     return false;
   }
@@ -226,6 +240,16 @@ inline bool decode_control(const std::uint8_t* data, std::size_t size,
   const float vyaw = detail::read_float(data + 48);
   if (!std::isfinite(vx) || !std::isfinite(vy) || !std::isfinite(vyaw)) {
     detail::set_error(error, "velocity must be finite");
+    return false;
+  }
+  constexpr std::uint32_t command_flags =
+      static_cast<std::uint32_t>(ControlFlags::kEmergencyStop) |
+      static_cast<std::uint32_t>(ControlFlags::kResetEstop) |
+      static_cast<std::uint32_t>(ControlFlags::kStand) |
+      static_cast<std::uint32_t>(ControlFlags::kLie);
+  if ((raw_flags & command_flags) != 0U &&
+      (vx != 0.0F || vy != 0.0F || vyaw != 0.0F)) {
+    detail::set_error(error, "discrete command requires zero velocity");
     return false;
   }
   frame = ControlFrame{
@@ -253,8 +277,18 @@ inline bool decode_ack(const std::uint8_t* data, std::size_t size,
     detail::set_error(error, "unknown gateway state");
     return false;
   }
-  if (raw_fault > static_cast<std::uint32_t>(FaultReason::kShutdown)) {
+  const auto raw_flags = detail::read_u32(data + 48);
+  constexpr std::uint32_t known_ack_flags =
+      kAckEstopLatched | kAckCommandAccepted | kAckPostureStanding |
+      kAckPostureLying;
+  if (raw_fault > static_cast<std::uint32_t>(FaultReason::kEstop)) {
     detail::set_error(error, "unknown fault reason");
+    return false;
+  }
+  if ((raw_flags & ~known_ack_flags) != 0U ||
+      ((raw_flags & kAckPostureStanding) != 0U &&
+       (raw_flags & kAckPostureLying) != 0U)) {
+    detail::set_error(error, "invalid ACK flags");
     return false;
   }
   frame = AckFrame{
@@ -264,7 +298,7 @@ inline bool decode_ack(const std::uint8_t* data, std::size_t size,
       static_cast<GatewayState>(raw_state),
       detail::read_i32(data + 40),
       static_cast<FaultReason>(raw_fault),
-      detail::read_u32(data + 48),
+      raw_flags,
   };
   return true;
 }
@@ -273,10 +307,22 @@ inline std::vector<std::uint8_t> encode_control(const ControlFrame& frame) {
   const auto raw_flags = static_cast<std::uint32_t>(frame.flags);
   constexpr std::uint32_t known_flags =
       static_cast<std::uint32_t>(ControlFlags::kArmRequest) |
-      static_cast<std::uint32_t>(ControlFlags::kDisarm);
-  if ((raw_flags & ~known_flags) != 0U || raw_flags == known_flags ||
+      static_cast<std::uint32_t>(ControlFlags::kDisarm) |
+      static_cast<std::uint32_t>(ControlFlags::kEmergencyStop) |
+      static_cast<std::uint32_t>(ControlFlags::kResetEstop) |
+      static_cast<std::uint32_t>(ControlFlags::kStand) |
+      static_cast<std::uint32_t>(ControlFlags::kLie);
+  constexpr std::uint32_t command_flags =
+      static_cast<std::uint32_t>(ControlFlags::kEmergencyStop) |
+      static_cast<std::uint32_t>(ControlFlags::kResetEstop) |
+      static_cast<std::uint32_t>(ControlFlags::kStand) |
+      static_cast<std::uint32_t>(ControlFlags::kLie);
+  if ((raw_flags & ~known_flags) != 0U ||
+      (raw_flags != 0U && (raw_flags & (raw_flags - 1U)) != 0U) ||
       !std::isfinite(frame.vx) || !std::isfinite(frame.vy) ||
-      !std::isfinite(frame.vyaw)) {
+      !std::isfinite(frame.vyaw) ||
+      ((raw_flags & command_flags) != 0U &&
+       (frame.vx != 0.0F || frame.vy != 0.0F || frame.vyaw != 0.0F))) {
     throw std::invalid_argument("invalid control frame");
   }
   std::vector<std::uint8_t> output;
@@ -294,10 +340,16 @@ inline std::vector<std::uint8_t> encode_control(const ControlFrame& frame) {
 }
 
 inline std::vector<std::uint8_t> encode_ack(const AckFrame& frame) {
+  constexpr std::uint32_t known_ack_flags =
+      kAckEstopLatched | kAckCommandAccepted | kAckPostureStanding |
+      kAckPostureLying;
   if (static_cast<std::uint32_t>(frame.state) >
           static_cast<std::uint32_t>(GatewayState::kFault) ||
       static_cast<std::uint32_t>(frame.fault) >
-          static_cast<std::uint32_t>(FaultReason::kShutdown)) {
+          static_cast<std::uint32_t>(FaultReason::kEstop) ||
+      (frame.flags & ~known_ack_flags) != 0U ||
+      ((frame.flags & kAckPostureStanding) != 0U &&
+       (frame.flags & kAckPostureLying) != 0U)) {
     throw std::invalid_argument("invalid ACK frame");
   }
   std::vector<std::uint8_t> output;

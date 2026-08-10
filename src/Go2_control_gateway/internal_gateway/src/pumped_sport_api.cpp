@@ -54,6 +54,20 @@ class PumpedSportApi final : public SportApi {
     return result;
   }
 
+  int StandDown() override {
+    clear_motion_target();
+    int result = 0;
+    {
+      std::lock_guard<std::mutex> backend_lock(backend_mutex_);
+      result = backend_->StandDown();
+    }
+    if (result == 0) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      prepared_ = false;
+    }
+    return result;
+  }
+
   int Move(float vx, float vy, float vyaw) override {
     {
       std::lock_guard<std::mutex> lock(state_mutex_);

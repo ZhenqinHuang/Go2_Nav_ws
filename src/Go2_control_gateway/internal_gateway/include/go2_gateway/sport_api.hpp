@@ -9,6 +9,7 @@ class SportApi {
  public:
   virtual ~SportApi() = default;
   virtual int BalanceStand() = 0;
+  virtual int StandDown() = 0;
   virtual int Move(float vx, float vy, float vyaw) = 0;
   virtual int StopMove() = 0;
   virtual int PollError() { return 0; }

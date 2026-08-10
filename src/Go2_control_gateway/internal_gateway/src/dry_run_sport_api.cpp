@@ -7,6 +7,7 @@ namespace go2_gateway {
 class DryRunSportApi final : public SportApi {
  public:
   int BalanceStand() override { return 0; }
+  int StandDown() override { return 0; }
 
   int Move(float vx, float vy, float vyaw) override {
     vx_ = vx;

@@ -28,6 +28,18 @@ class ControlFlags(IntFlag):
     NONE = 0
     ARM_REQUEST = 1 << 0
     DISARM = 1 << 1
+    EMERGENCY_STOP = 1 << 2
+    RESET_ESTOP = 1 << 3
+    STAND = 1 << 4
+    LIE = 1 << 5
+
+
+class AckFlags(IntFlag):
+    NONE = 0
+    ESTOP_LATCHED = 1 << 0
+    COMMAND_ACCEPTED = 1 << 1
+    POSTURE_STANDING = 1 << 2
+    POSTURE_LYING = 1 << 3
 
 
 class GatewayState(IntEnum):
@@ -44,6 +56,7 @@ class FaultReason(IntEnum):
     SDK = 3
     EXPLICIT_DISARM = 4
     SHUTDOWN = 5
+    ESTOP = 6
 
 
 def _as_float32(value: float) -> float:
@@ -69,13 +82,19 @@ def _require_i32(name: str, value: int) -> int:
 
 def _validate_control_flags(value: ControlFlags | int) -> ControlFlags:
     raw = int(value)
-    known = int(ControlFlags.ARM_REQUEST | ControlFlags.DISARM)
+    known = int(
+        ControlFlags.ARM_REQUEST
+        | ControlFlags.DISARM
+        | ControlFlags.EMERGENCY_STOP
+        | ControlFlags.RESET_ESTOP
+        | ControlFlags.STAND
+        | ControlFlags.LIE
+    )
     if raw & ~known:
         raise ProtocolError("unknown control flags")
-    flags = ControlFlags(raw)
-    if flags & ControlFlags.ARM_REQUEST and flags & ControlFlags.DISARM:
+    if raw and raw & (raw - 1):
         raise ProtocolError("conflicting control flags")
-    return flags
+    return ControlFlags(raw)
 
 
 @dataclass(frozen=True)
@@ -96,6 +115,16 @@ class ControlFrame:
         object.__setattr__(self, "vx", _as_float32(self.vx))
         object.__setattr__(self, "vy", _as_float32(self.vy))
         object.__setattr__(self, "vyaw", _as_float32(self.vyaw))
+        command_flags = (
+            ControlFlags.EMERGENCY_STOP
+            | ControlFlags.RESET_ESTOP
+            | ControlFlags.STAND
+            | ControlFlags.LIE
+        )
+        if self.flags & command_flags and any(
+            value != 0.0 for value in (self.vx, self.vy, self.vyaw)
+        ):
+            raise ProtocolError("discrete commands require zero velocity")
 
 
 @dataclass(frozen=True)
@@ -106,7 +135,7 @@ class AckFrame:
     state: GatewayState
     sdk_code: int
     fault: FaultReason
-    flags: int = 0
+    flags: AckFlags | int = AckFlags.NONE
 
     def __post_init__(self):
         object.__setattr__(self, "session_id", _require_u64("session_id", self.session_id))
@@ -121,10 +150,21 @@ class AckFrame:
             object.__setattr__(self, "fault", FaultReason(int(self.fault)))
         except ValueError as exc:
             raise ProtocolError("unknown fault reason") from exc
-        flags = int(self.flags)
-        if flags < 0 or flags > 0xFFFFFFFF:
-            raise ProtocolError("ACK flags must fit uint32")
-        object.__setattr__(self, "flags", flags)
+        raw_flags = int(self.flags)
+        known_flags = int(
+            AckFlags.ESTOP_LATCHED
+            | AckFlags.COMMAND_ACCEPTED
+            | AckFlags.POSTURE_STANDING
+            | AckFlags.POSTURE_LYING
+        )
+        if raw_flags < 0 or raw_flags > 0xFFFFFFFF or raw_flags & ~known_flags:
+            raise ProtocolError("unknown ACK flags")
+        if (
+            raw_flags & int(AckFlags.POSTURE_STANDING)
+            and raw_flags & int(AckFlags.POSTURE_LYING)
+        ):
+            raise ProtocolError("conflicting posture flags")
+        object.__setattr__(self, "flags", AckFlags(raw_flags))
 
 
 def _append_crc(payload_without_crc: bytes) -> bytes:

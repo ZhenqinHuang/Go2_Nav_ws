@@ -27,6 +27,28 @@ Nav2 /cmd_vel 或 Web 手动速度
 
 根目录脚本是稳定入口，具体 ROS 参数仍保存在各功能包中。
 
+## 仓库结构
+
+```text
+Go2_Nav_ws/
+├── docs/                  架构、部署、运维和实施记录
+├── maps/                  当前唯一生效的地图包；archive 仅存历史地图
+├── scripts/               面向操作者的稳定入口
+├── src/
+│   ├── Go2_bringup/       统一启动、检查与系统编排
+│   ├── Go2_Slam/          FAST-LIO2 建图接入说明与工程约定
+│   ├── Go2_localization/  ICP 定位和 odom TF
+│   ├── Go2_perception/    点云转 scan、PCD 转二维地图
+│   ├── Go2_nav2/          Nav2、DWB、RPP 和行为树
+│   ├── Go2_control_gateway/ 外载 sender 与内载 gateway
+│   ├── Go2_web_console/   正式局域网 Web 控制台
+│   ├── Go2_web_bridge/    可选云端和语音功能
+│   └── Go2_time_sync/     NTP/PTP 时间同步
+└── test/                  接口、安全和零运动冒烟测试入口
+```
+
+Livox 驱动和 FAST-LIO2 不复制进本仓库，默认分别由 `~/ws_Livox` 和 `~/ws_fastlio2` 提供；本仓库只负责配置约定、启动编排和下游导航链路。
+
 ## 地图
 
 当前生效地图只有一套：
@@ -54,6 +76,8 @@ PCD、PGM 和 YAML 必须来自同一次 FAST-LIO2 建图。三维定位只读�
 - [地图工作流](docs/mapping.md)
 - [启动与操作](docs/operations.md)
 - [故障排查](docs/troubleshooting.md)
+- [Jetson 后续开发边界](docs/jetson-development-guardrails.md)
+- [2026-08-10 工作日志](docs/work-log-2026-08-10.md)
 - [已确认的整合设计](docs/plans/2026-08-10-go2-navigation-web-integration-design.md)
 
 ## 安全说明

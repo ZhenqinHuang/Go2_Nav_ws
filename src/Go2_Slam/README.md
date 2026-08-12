@@ -1,6 +1,6 @@
-# Go2_Slam — SLAM 建图
+# Go2_Slam — FAST-LIO2 建图接入
 
-Go2 机器狗使用 FAST-LIO2 进行 LiDAR-IMU 紧耦合 SLAM 建图的说明。建图产生的 PCD 文件供 `fast_lio_localization_ros2` 重定位使用。
+本目录保存 Go2 使用 FAST-LIO2 建图的接入说明与工程约定，不包含 FAST-LIO2 源码。FAST-LIO2 独立工作空间默认为 `~/ws_fastlio2`；建图产生的 PCD 文件供 `fast_lio_localization_ros2` 重定位使用。
 
 ---
 

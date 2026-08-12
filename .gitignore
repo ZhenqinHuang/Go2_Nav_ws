@@ -28,7 +28,8 @@ dist/
 *.key
 
 # Runtime maps and staging data
-maps/archive/
+maps/archive/*
+!maps/archive/README.md
 maps/staging/
 
 # Local inspection artifacts

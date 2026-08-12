@@ -130,7 +130,7 @@ Expected: exit code 0。
 Run:
 
 ```powershell
-rg -n "123456|nvidia / nvidia|unitree / 123|password\\s*[:=]\\s*['\\\"]" README.md docs
+rg -n -i "password\\s*[:=]|passwd|sshpass|token\\s*[:=]|secret\\s*[:=]" README.md docs
 ```
 
 Expected: 无明文凭据命中。

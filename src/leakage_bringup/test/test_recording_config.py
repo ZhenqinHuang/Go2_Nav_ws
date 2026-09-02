@@ -19,6 +19,7 @@ def test_record_topics_skip_unavailable_realsense_metadata():
 def test_record_script_applies_qos_overrides():
     script = (ROOT / "scripts" / "record_leakage_session.sh").read_text()
     assert "--qos-profile-overrides-path" in script
+    assert 'bash "$workspace/scripts/hardware_preflight.sh"' in script
 
 
 def test_preflight_waits_for_registered_cloud():

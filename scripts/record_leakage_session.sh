@@ -7,7 +7,7 @@ qos_file="$workspace/config/record_qos.yaml"
 output_root="${1:-/home/nvidia/leakage_bags}"
 
 source /opt/ros/foxy/setup.bash
-"$workspace/scripts/hardware_preflight.sh"
+bash "$workspace/scripts/hardware_preflight.sh"
 mapfile -t topics < <(grep -Ev '^\s*(#|$)' "$topic_file")
 mkdir -p "$output_root"
 output_dir="$output_root/leakage_$(date +%Y%m%d_%H%M%S)"

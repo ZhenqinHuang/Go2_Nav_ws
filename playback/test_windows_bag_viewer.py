@@ -11,9 +11,11 @@ from playback.windows_bag_viewer import (
     height_colors,
     image_array,
     incremental_entity_path,
+    mask_rgba,
     path_xyz,
     pointcloud_xyz,
     rerun_blueprint,
+    select_depth_topic,
     validate_topics,
 )
 
@@ -65,6 +67,13 @@ class DecoderTest(unittest.TestCase):
 
         np.testing.assert_array_equal(image_array(message), [[1000, 2500]])
 
+    def test_decodes_mono_mask(self):
+        message = SimpleNamespace(
+            encoding="mono8", height=1, width=2, step=2, data=bytes([0, 255])
+        )
+
+        np.testing.assert_array_equal(image_array(message), [[0, 255]])
+
     def test_extracts_path_xyz(self):
         poses = [
             SimpleNamespace(
@@ -86,6 +95,13 @@ class DecoderTest(unittest.TestCase):
 
 
 class TopicValidationTest(unittest.TestCase):
+    def test_prefers_aligned_depth_and_falls_back_to_raw_depth(self):
+        aligned = "/camera/aligned_depth_to_color/image_raw"
+        raw = "/camera/depth/image_rect_raw"
+
+        self.assertEqual(select_depth_topic({raw, aligned}), aligned)
+        self.assertEqual(select_depth_topic({raw}), raw)
+
     def test_parses_rerun_and_legacy_modes(self):
         parser = build_parser()
 
@@ -109,6 +125,12 @@ class TopicValidationTest(unittest.TestCase):
 
 
 class ViewMathTest(unittest.TestCase):
+    def test_builds_transparent_red_leakage_overlay(self):
+        overlay = mask_rgba(np.asarray([[0, 255]], dtype=np.uint8))
+
+        np.testing.assert_array_equal(overlay[0, 0], [255, 0, 0, 0])
+        np.testing.assert_array_equal(overlay[0, 1], [255, 0, 0, 150])
+
     def test_builds_two_map_tabs(self):
         blueprint = rerun_blueprint()
         tabs = blueprint.root_container.contents[0]

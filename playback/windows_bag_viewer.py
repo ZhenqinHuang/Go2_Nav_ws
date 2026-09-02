@@ -10,18 +10,35 @@ from rosbags.rosbag2 import Reader
 from rosbags.typesys import Stores, get_typestore
 
 
-TOPICS = (
-    "/record/cloud_registered",
-    "/fastlio_path",
-    "/camera/color/image_raw",
-    "/camera/depth/image_rect_raw",
-)
+CLOUD_TOPIC = "/record/cloud_registered"
+PATH_TOPIC = "/fastlio_path"
+RGB_TOPIC = "/camera/color/image_raw"
+RAW_DEPTH_TOPIC = "/camera/depth/image_rect_raw"
+ALIGNED_DEPTH_TOPIC = "/camera/aligned_depth_to_color/image_raw"
+MASK_TOPIC = "/leakage/mask"
+REQUIRED_TOPICS = (CLOUD_TOPIC, PATH_TOPIC, RGB_TOPIC)
+
+
+def select_depth_topic(available: set[str]) -> str:
+    if ALIGNED_DEPTH_TOPIC in available:
+        return ALIGNED_DEPTH_TOPIC
+    if RAW_DEPTH_TOPIC in available:
+        return RAW_DEPTH_TOPIC
+    raise ValueError(
+        f"bag is missing required depth topic: {ALIGNED_DEPTH_TOPIC} or {RAW_DEPTH_TOPIC}"
+    )
+
+
+def playback_topics(available: set[str]) -> tuple[str, ...]:
+    topics = REQUIRED_TOPICS + (select_depth_topic(available),)
+    return topics + ((MASK_TOPIC,) if MASK_TOPIC in available else ())
 
 
 def validate_topics(available: set[str]) -> None:
-    missing = [topic for topic in TOPICS if topic not in available]
+    missing = [topic for topic in REQUIRED_TOPICS if topic not in available]
     if missing:
         raise ValueError(f"bag is missing required topics: {', '.join(missing)}")
+    select_depth_topic(available)
 
 
 def axis_bounds(cloud: np.ndarray, path: np.ndarray) -> tuple[np.ndarray, float]:
@@ -139,7 +156,21 @@ def image_array(message) -> np.ndarray:
             message.height, message.step // 2
         )
         return row[:, : message.width]
+    if message.encoding == "mono8":
+        row = np.frombuffer(message.data, dtype=np.uint8).reshape(
+            message.height, message.step
+        )
+        return row[:, : message.width]
     raise ValueError(f"unsupported image encoding: {message.encoding}")
+
+
+def mask_rgba(mask: np.ndarray) -> np.ndarray:
+    if mask.ndim != 2:
+        raise ValueError("mask must have shape (height, width)")
+    overlay = np.zeros((*mask.shape, 4), dtype=np.uint8)
+    overlay[:, :, 0] = 255
+    overlay[:, :, 3] = np.where(mask > 0, 150, 0)
+    return overlay
 
 
 def path_xyz(message) -> np.ndarray:
@@ -156,9 +187,10 @@ def check_bag(directory: Path) -> None:
     if not directory.is_dir():
         raise FileNotFoundError(f"bag directory not found: {directory}")
     with Reader(directory) as reader:
-        validate_topics({connection.topic for connection in reader.connections})
+        available = {connection.topic for connection in reader.connections}
+        validate_topics(available)
         print(f"duration_seconds={(reader.end_time - reader.start_time) / 1e9:.3f}")
-        for topic in TOPICS:
+        for topic in playback_topics(available):
             connection = next(item for item in reader.connections if item.topic == topic)
             print(f"{topic}={connection.msgcount}")
 
@@ -169,7 +201,7 @@ def load_base_map(directory: Path, typestore) -> np.ndarray:
         connection = next(
             item
             for item in reader.connections
-            if item.topic == "/record/cloud_registered"
+            if item.topic == CLOUD_TOPIC
         )
         for _, _, raw in reader.messages(connections=[connection]):
             frames.append(pointcloud_xyz(typestore.deserialize_cdr(raw, connection.msgtype)))
@@ -216,15 +248,23 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
         ),
         static=True,
     )
+    rr.log(
+        "/camera/rgb",
+        rr.AnnotationContext([(1, "Leakage", (255, 0, 0))]),
+        static=True,
+    )
 
     cloud_index = 0
     with Reader(directory) as reader:
-        validate_topics({connection.topic for connection in reader.connections})
-        connections = [item for item in reader.connections if item.topic in TOPICS]
+        available = {connection.topic for connection in reader.connections}
+        validate_topics(available)
+        selected = playback_topics(available)
+        depth_topic = select_depth_topic(available)
+        connections = [item for item in reader.connections if item.topic in selected]
         for connection, timestamp, raw in reader.messages(connections=connections):
             rr.set_time("bag_time", duration=(timestamp - reader.start_time) / 1e9)
             message = typestore.deserialize_cdr(raw, connection.msgtype)
-            if connection.topic == "/record/cloud_registered":
+            if connection.topic == CLOUD_TOPIC:
                 cloud = pointcloud_xyz(message)
                 rr.log(
                     incremental_entity_path(cloud_index),
@@ -239,7 +279,7 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
                     rr.Points3D(cloud, colors=[255, 45, 210], radii=0.025),
                 )
                 cloud_index += 1
-            elif connection.topic == "/fastlio_path":
+            elif connection.topic == PATH_TOPIC:
                 path = path_xyz(message)
                 if len(path):
                     rr.log(
@@ -248,12 +288,18 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
                             [path], colors=[0, 255, 102], radii=0.025
                         ),
                     )
-            elif connection.topic == "/camera/color/image_raw":
+            elif connection.topic == RGB_TOPIC:
                 rr.log("/camera/rgb/image", rr.Image(image_array(message)))
-            elif connection.topic == "/camera/depth/image_rect_raw":
+            elif connection.topic == depth_topic:
                 rr.log(
                     "/camera/depth/image",
                     rr.DepthImage(image_array(message), meter=1000),
+                )
+            elif connection.topic == MASK_TOPIC:
+                mask = (image_array(message) > 0).astype(np.uint8)
+                rr.log(
+                    "/camera/rgb/leakage",
+                    rr.SegmentationImage(mask, opacity=0.55, draw_order=1.0),
                 )
 
     rr.disconnect()
@@ -277,8 +323,11 @@ def play_bag(directory: Path) -> None:
     base_map = load_base_map(directory, typestore)
     reader = Reader(directory)
     reader.open()
-    validate_topics({connection.topic for connection in reader.connections})
-    connections = [item for item in reader.connections if item.topic in TOPICS]
+    available = {connection.topic for connection in reader.connections}
+    validate_topics(available)
+    selected = playback_topics(available)
+    depth_topic = select_depth_topic(available)
+    connections = [item for item in reader.connections if item.topic in selected]
     messages = iter(reader.messages(connections=connections))
     duration = (reader.end_time - reader.start_time) / 1e9
 
@@ -318,6 +367,9 @@ def play_bag(directory: Path) -> None:
     scene.set_zlim(center[2] - radius, center[2] + radius)
     scene.set_box_aspect((1, 1, 1))
     rgb_artist = rgb_axis.imshow(np.zeros((480, 640, 3), dtype=np.uint8))
+    mask_artist = rgb_axis.imshow(
+        np.zeros((480, 640, 4), dtype=np.uint8), interpolation="nearest"
+    )
     depth_artist = depth_axis.imshow(
         np.zeros((480, 640), dtype=np.uint16), cmap="turbo", vmin=0, vmax=4000
     )
@@ -360,16 +412,18 @@ def play_bag(directory: Path) -> None:
         root.destroy()
 
     def redraw(changed: set[str]) -> None:
-        if "/record/cloud_registered" in changed:
+        if CLOUD_TOPIC in changed:
             cloud = state["cloud"]
             cloud_artist._offsets3d = (cloud[:, 0], cloud[:, 1], cloud[:, 2])
-        if "/fastlio_path" in changed:
+        if PATH_TOPIC in changed:
             path = state["path"]
             path_artist.set_data(path[:, 0], path[:, 1])
             path_artist.set_3d_properties(path[:, 2])
-        if "/camera/color/image_raw" in changed:
+        if RGB_TOPIC in changed:
             rgb_artist.set_data(state["rgb"])
-        if "/camera/depth/image_rect_raw" in changed:
+        if MASK_TOPIC in changed:
+            mask_artist.set_data(mask_rgba(state["mask"]))
+        if depth_topic in changed:
             depth = state["depth"]
             depth_artist.set_data(depth)
             valid = depth[depth > 0]
@@ -388,14 +442,16 @@ def play_bag(directory: Path) -> None:
                 while state["next"] is not None and state["next"][1] <= target:
                     connection, _, raw = state["next"]
                     message = typestore.deserialize_cdr(raw, connection.msgtype)
-                    if connection.topic == "/record/cloud_registered":
+                    if connection.topic == CLOUD_TOPIC:
                         state["cloud"] = pointcloud_xyz(message)
-                    elif connection.topic == "/fastlio_path":
+                    elif connection.topic == PATH_TOPIC:
                         state["path"] = path_xyz(message)
-                    elif connection.topic == "/camera/color/image_raw":
+                    elif connection.topic == RGB_TOPIC:
                         state["rgb"] = image_array(message)
-                    elif connection.topic == "/camera/depth/image_rect_raw":
+                    elif connection.topic == depth_topic:
                         state["depth"] = image_array(message)
+                    elif connection.topic == MASK_TOPIC:
+                        state["mask"] = image_array(message)
                     changed.add(connection.topic)
                     state["next"] = next(messages, None)
                 if changed:

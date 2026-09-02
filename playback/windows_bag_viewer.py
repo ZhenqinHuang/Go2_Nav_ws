@@ -1,7 +1,25 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
+from pathlib import Path
+
 import numpy as np
+from rosbags.rosbag2 import Reader
+
+
+TOPICS = (
+    "/record/cloud_registered",
+    "/fastlio_path",
+    "/camera/color/image_raw",
+    "/camera/depth/image_rect_raw",
+)
+
+
+def validate_topics(available: set[str]) -> None:
+    missing = [topic for topic in TOPICS if topic not in available]
+    if missing:
+        raise ValueError(f"bag is missing required topics: {', '.join(missing)}")
 
 
 def pointcloud_xyz(message) -> np.ndarray:
@@ -42,3 +60,28 @@ def path_xyz(message) -> np.ndarray:
         ],
         dtype=float,
     ).reshape(-1, 3)
+
+
+def check_bag(directory: Path) -> None:
+    if not directory.is_dir():
+        raise FileNotFoundError(f"bag directory not found: {directory}")
+    with Reader(directory) as reader:
+        validate_topics({connection.topic for connection in reader.connections})
+        print(f"duration_seconds={(reader.end_time - reader.start_time) / 1e9:.3f}")
+        for topic in TOPICS:
+            connection = next(item for item in reader.connections if item.topic == topic)
+            print(f"{topic}={connection.msgcount}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Display a synchronized leakage ROS2 bag")
+    parser.add_argument("bag", type=Path)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    if not args.check:
+        parser.error("GUI is not implemented yet; use --check")
+    check_bag(args.bag.resolve())
+
+
+if __name__ == "__main__":
+    main()

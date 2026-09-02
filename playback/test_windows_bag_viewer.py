@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from playback.windows_bag_viewer import image_array, path_xyz, pointcloud_xyz
+from playback.windows_bag_viewer import (
+    image_array,
+    path_xyz,
+    pointcloud_xyz,
+    validate_topics,
+)
 
 
 class DecoderTest(unittest.TestCase):
@@ -72,6 +77,18 @@ class DecoderTest(unittest.TestCase):
             path_xyz(SimpleNamespace(poses=poses)),
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
         )
+
+
+class TopicValidationTest(unittest.TestCase):
+    def test_rejects_missing_required_topic(self):
+        with self.assertRaisesRegex(ValueError, "/fastlio_path"):
+            validate_topics(
+                {
+                    "/record/cloud_registered",
+                    "/camera/color/image_raw",
+                    "/camera/depth/image_rect_raw",
+                }
+            )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>leakage_bringup</name>
+  <version>0.0.1</version>
+  <description>Hardware bringup tools for leakage localization.</description>
+  <maintainer email="nvidia@localhost">nvidia</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

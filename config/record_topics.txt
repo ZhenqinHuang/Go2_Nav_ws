@@ -1,0 +1,15 @@
+# Fast-LIO2 / Livox
+/livox/lidar
+/livox/imu
+/Odometry
+/record/odometry
+/record/cloud_registered
+/fastlio_path
+/tf
+/tf_static
+
+# D435i raw RGB-D at capture rate
+/camera/color/image_raw
+/camera/color/camera_info
+/camera/depth/image_rect_raw
+/camera/depth/camera_info

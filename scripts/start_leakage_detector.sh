@@ -8,6 +8,7 @@ calibration="${LEAKAGE_CALIBRATION:-/home/nvidia/fastlivo2_ws/config/common/cali
 source /opt/ros/foxy/setup.bash
 source "$workspace/install/leakage_bringup/share/leakage_bringup/package.bash"
 source "$workspace/.venv-yolo/bin/activate"
+export MPLBACKEND=Agg
 
 exec python -m leakage_bringup.leakage_detector --ros-args \
   -p model_path:="$model" \

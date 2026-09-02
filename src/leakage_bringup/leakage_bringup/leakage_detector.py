@@ -24,6 +24,7 @@ class LeakageDetector(Node):
         self.declare_parameter("point_stride", 4)
         self.declare_parameter("max_depth_m", 10.0)
         self.declare_parameter("max_sync_delta_s", 0.05)
+        self.declare_parameter("inference_hz", 2.0)
 
         from ultralytics import YOLO
 
@@ -39,7 +40,7 @@ class LeakageDetector(Node):
         if not self.enable_3d:
             self.get_logger().warning("calibration gate closed; publishing 2D masks only")
 
-        self.depth = self.info = self.odom = None
+        self.rgb = self.depth = self.info = self.odom = None
         self.mask_pub = self.create_publisher(Image, "/leakage/mask", 10)
         self.cloud_pub = self.create_publisher(PointCloud2, "/leakage/points", 10)
         self.create_subscription(
@@ -48,6 +49,10 @@ class LeakageDetector(Node):
         self.create_subscription(CameraInfo, "/camera/color/camera_info", self._info, 1)
         self.create_subscription(Odometry, "/Odometry", self._odom, 1)
         self.create_subscription(Image, "/camera/color/image_raw", self._rgb, 1)
+        inference_hz = float(self.get_parameter("inference_hz").value)
+        if inference_hz <= 0.0:
+            raise ValueError("inference_hz must be positive")
+        self.create_timer(1.0 / inference_hz, self._infer)
 
     def _depth(self, message):
         self.depth = message
@@ -62,6 +67,13 @@ class LeakageDetector(Node):
         if message.encoding != "rgb8":
             self.get_logger().error(f"unsupported RGB encoding: {message.encoding}")
             return
+        self.rgb = message
+
+    def _infer(self):
+        message = self.rgb
+        if message is None:
+            return
+        self.rgb = None
         rgb = np.frombuffer(message.data, dtype=np.uint8).reshape(message.height, message.step)
         rgb = rgb[:, : message.width * 3].reshape(message.height, message.width, 3)
         result = self.model.predict(
@@ -69,6 +81,8 @@ class LeakageDetector(Node):
             conf=float(self.get_parameter("confidence").value),
             imgsz=int(self.get_parameter("image_size").value),
             retina_masks=True,
+            device=0,
+            half=True,
             verbose=False,
         )[0]
         mask = np.zeros((message.height, message.width), dtype=np.uint8)

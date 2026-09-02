@@ -7,7 +7,9 @@ import numpy as np
 from playback.windows_bag_viewer import (
     axis_bounds,
     combine_cloud_frames,
+    height_colors,
     image_array,
+    incremental_entity_path,
     path_xyz,
     pointcloud_xyz,
     validate_topics,
@@ -94,6 +96,20 @@ class TopicValidationTest(unittest.TestCase):
 
 
 class ViewMathTest(unittest.TestCase):
+    def test_builds_bounded_height_colors(self):
+        colors = height_colors(
+            np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]]), brightness=0.5
+        )
+
+        self.assertEqual(colors.dtype, np.uint8)
+        self.assertEqual(colors.shape, (2, 3))
+        np.testing.assert_array_equal(colors, [[0, 38, 20], [128, 90, 18]])
+
+    def test_builds_unique_incremental_entity_path(self):
+        self.assertEqual(
+            incremental_entity_path(12), "/incremental/map/frame_000012"
+        )
+
     def test_combines_registered_cloud_frames(self):
         combined = combine_cloud_frames(
             [

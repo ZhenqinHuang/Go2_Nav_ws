@@ -39,6 +39,29 @@ def combine_cloud_frames(frames: list[np.ndarray]) -> np.ndarray:
     return np.vstack(nonempty) if nonempty else np.empty((0, 3))
 
 
+def height_colors(points: np.ndarray, brightness: float = 1.0) -> np.ndarray:
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("points must have shape (n, 3)")
+    if not 0.0 <= brightness <= 1.0:
+        raise ValueError("brightness must be between 0 and 1")
+    if not len(points):
+        return np.empty((0, 3), dtype=np.uint8)
+    heights = points[:, 2]
+    span = np.ptp(heights)
+    levels = (heights - heights.min()) / span if span else np.zeros(len(points))
+    low = np.asarray([0.0, 76.0, 40.0])
+    high = np.asarray([255.0, 180.0, 36.0])
+    return np.rint((low + (high - low) * levels[:, None]) * brightness).astype(
+        np.uint8
+    )
+
+
+def incremental_entity_path(frame_index: int) -> str:
+    if frame_index < 0:
+        raise ValueError("frame index must not be negative")
+    return f"/incremental/map/frame_{frame_index:06d}"
+
+
 def pointcloud_xyz(message) -> np.ndarray:
     offsets = {field.name: field.offset for field in message.fields}
     if not all(name in offsets for name in ("x", "y", "z")):

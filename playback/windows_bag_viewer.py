@@ -201,10 +201,10 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
     rr.init(
         "leakage_ros2_bag",
         spawn=save_path is None,
-        default_blueprint=blueprint,
     )
     if save_path is not None:
-        rr.save(save_path, default_blueprint=blueprint)
+        rr.save(save_path)
+    rr.send_blueprint(blueprint, make_active=True, make_default=True)
 
     rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
     rr.log(

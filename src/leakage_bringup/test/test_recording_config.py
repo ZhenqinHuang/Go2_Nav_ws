@@ -41,9 +41,17 @@ def test_realsense_starts_aligned_depth():
 def test_recording_includes_aligned_depth():
     topics = (ROOT / "config" / "record_topics.txt").read_text()
     assert "/camera/aligned_depth_to_color/image_raw" in topics
+    assert "/camera/depth/image_rect_raw" not in topics
+    assert "/camera/depth/camera_info" not in topics
 
 
 def test_recording_includes_detection_outputs():
     topics = (ROOT / "config" / "record_topics.txt").read_text()
     assert "/leakage/mask" in topics
     assert "/leakage/points" in topics
+
+
+def test_time_sync_check_uses_lidar_route_interface():
+    script = (ROOT / "scripts" / "verify_time_sync.sh").read_text()
+    assert "ip route get" in script
+    assert "eth0" not in script

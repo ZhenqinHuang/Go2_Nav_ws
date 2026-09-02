@@ -5,6 +5,7 @@ import rclpy
 import yaml
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 
 from .leakage_projection import calibration_ready, camera_points_to_map, mask_depth_points
@@ -43,12 +44,19 @@ class LeakageDetector(Node):
         self.rgb = self.depth = self.info = self.odom = None
         self.mask_pub = self.create_publisher(Image, "/leakage/mask", 10)
         self.cloud_pub = self.create_publisher(PointCloud2, "/leakage/points", 10)
-        self.create_subscription(
-            Image, "/camera/aligned_depth_to_color/image_raw", self._depth, 1
+        camera_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
         )
-        self.create_subscription(CameraInfo, "/camera/color/camera_info", self._info, 1)
+        self.create_subscription(
+            Image, "/camera/aligned_depth_to_color/image_raw", self._depth, camera_qos
+        )
+        self.create_subscription(
+            CameraInfo, "/camera/color/camera_info", self._info, camera_qos
+        )
         self.create_subscription(Odometry, "/Odometry", self._odom, 1)
-        self.create_subscription(Image, "/camera/color/image_raw", self._rgb, 1)
+        self.create_subscription(Image, "/camera/color/image_raw", self._rgb, camera_qos)
         inference_hz = float(self.get_parameter("inference_hz").value)
         if inference_hz <= 0.0:
             raise ValueError("inference_hz must be positive")

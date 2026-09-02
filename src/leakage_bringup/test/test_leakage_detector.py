@@ -16,3 +16,8 @@ def test_detector_throttles_latest_frame_instead_of_inferring_in_rgb_callback():
 def test_detector_uses_jetson_cuda_fp16():
     assert "device=0" in SOURCE
     assert "half=True" in SOURCE
+
+
+def test_detector_requests_best_effort_camera_qos():
+    assert "ReliabilityPolicy.BEST_EFFORT" in SOURCE
+    assert "DurabilityPolicy.VOLATILE" in SOURCE

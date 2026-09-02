@@ -10,8 +10,7 @@ required_topics=(
   /fastlio_path
   /camera/color/image_raw
   /camera/color/camera_info
-  /camera/depth/image_rect_raw
-  /camera/depth/camera_info
+  /camera/aligned_depth_to_color/image_raw
 )
 
 available="$(ros2 topic list)"

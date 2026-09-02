@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from playback.windows_bag_viewer import (
+    axis_bounds,
     image_array,
     path_xyz,
     pointcloud_xyz,
@@ -89,6 +90,23 @@ class TopicValidationTest(unittest.TestCase):
                     "/camera/depth/image_rect_raw",
                 }
             )
+
+
+class ViewMathTest(unittest.TestCase):
+    def test_combines_cloud_and_path_bounds(self):
+        center, radius = axis_bounds(
+            np.asarray([[0.0, 0.0, 0.0], [2.0, 4.0, 6.0]]),
+            np.asarray([[-2.0, 1.0, 3.0]]),
+        )
+
+        np.testing.assert_allclose(center, [0.0, 2.0, 3.0])
+        self.assertEqual(radius, 3.0)
+
+    def test_uses_default_bounds_without_points(self):
+        center, radius = axis_bounds(np.empty((0, 3)), np.empty((0, 3)))
+
+        np.testing.assert_array_equal(center, [0.0, 0.0, 0.0])
+        self.assertEqual(radius, 1.0)
 
 
 if __name__ == "__main__":

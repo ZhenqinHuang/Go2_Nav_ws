@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
 from rosbags.rosbag2 import Reader
+from rosbags.typesys import Stores, get_typestore
 
 
 TOPICS = (
@@ -20,6 +22,16 @@ def validate_topics(available: set[str]) -> None:
     missing = [topic for topic in TOPICS if topic not in available]
     if missing:
         raise ValueError(f"bag is missing required topics: {', '.join(missing)}")
+
+
+def axis_bounds(cloud: np.ndarray, path: np.ndarray) -> tuple[np.ndarray, float]:
+    nonempty = [points for points in (cloud, path) if points.size]
+    if not nonempty:
+        return np.zeros(3), 1.0
+    points = np.vstack(nonempty)
+    minimum = points.min(axis=0)
+    maximum = points.max(axis=0)
+    return (minimum + maximum) / 2, max(float((maximum - minimum).max() / 2), 1.0)
 
 
 def pointcloud_xyz(message) -> np.ndarray:
@@ -73,14 +85,160 @@ def check_bag(directory: Path) -> None:
             print(f"{topic}={connection.msgcount}")
 
 
+def play_bag(directory: Path) -> None:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+
+    if not directory.is_dir():
+        raise FileNotFoundError(f"bag directory not found: {directory}")
+
+    reader = Reader(directory)
+    reader.open()
+    validate_topics({connection.topic for connection in reader.connections})
+    connections = [item for item in reader.connections if item.topic in TOPICS]
+    messages = iter(reader.messages(connections=connections))
+    typestore = get_typestore(Stores.ROS2_FOXY)
+    duration = (reader.end_time - reader.start_time) / 1e9
+
+    root = tk.Tk()
+    root.title("Leakage ROS2 Bag Viewer")
+    root.geometry("1400x850")
+
+    figure = Figure(figsize=(14, 8), tight_layout=True)
+    grid = figure.add_gridspec(2, 2, width_ratios=(1.4, 1.0))
+    scene = figure.add_subplot(grid[:, 0], projection="3d")
+    rgb_axis = figure.add_subplot(grid[0, 1])
+    depth_axis = figure.add_subplot(grid[1, 1])
+    scene.set_title("Fast-LIO point cloud and path")
+    scene.set_xlabel("X (m)")
+    scene.set_ylabel("Y (m)")
+    scene.set_zlabel("Z (m)")
+    rgb_axis.set_title("RGB")
+    depth_axis.set_title("Depth")
+    rgb_axis.axis("off")
+    depth_axis.axis("off")
+
+    cloud_artist = scene.scatter([], [], [], s=2, cmap="viridis")
+    (path_artist,) = scene.plot([], [], [], color="red", linewidth=2)
+    rgb_artist = rgb_axis.imshow(np.zeros((480, 640, 3), dtype=np.uint8))
+    depth_artist = depth_axis.imshow(
+        np.zeros((480, 640), dtype=np.uint16), cmap="turbo", vmin=0, vmax=4000
+    )
+
+    canvas = FigureCanvasTkAgg(figure, master=root)
+    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    controls = ttk.Frame(root, padding=6)
+    controls.pack(fill=tk.X)
+    elapsed_text = tk.StringVar(value=f"0.0 / {duration:.1f} s")
+    progress = ttk.Progressbar(controls, maximum=duration)
+    progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+    ttk.Label(controls, textvariable=elapsed_text, width=18).pack(side=tk.RIGHT)
+
+    state = {
+        "playing": True,
+        "finished": False,
+        "elapsed": 0.0,
+        "last_wall": time.perf_counter(),
+        "next": next(messages, None),
+        "cloud": np.empty((0, 3)),
+        "path": np.empty((0, 3)),
+        "closed": False,
+    }
+
+    def toggle() -> None:
+        if state["finished"]:
+            return
+        state["playing"] = not state["playing"]
+        state["last_wall"] = time.perf_counter()
+        toggle_button.configure(text="Pause" if state["playing"] else "Play")
+
+    toggle_button = ttk.Button(controls, text="Pause", command=toggle)
+    toggle_button.pack(side=tk.RIGHT, padx=(0, 10))
+
+    def close() -> None:
+        if not state["closed"]:
+            reader.close()
+            state["closed"] = True
+        root.destroy()
+
+    def redraw(changed: set[str]) -> None:
+        if "/record/cloud_registered" in changed:
+            cloud = state["cloud"]
+            cloud_artist._offsets3d = (cloud[:, 0], cloud[:, 1], cloud[:, 2])
+            cloud_artist.set_array(cloud[:, 2])
+        if "/fastlio_path" in changed:
+            path = state["path"]
+            path_artist.set_data(path[:, 0], path[:, 1])
+            path_artist.set_3d_properties(path[:, 2])
+        if changed & {"/record/cloud_registered", "/fastlio_path"}:
+            center, radius = axis_bounds(state["cloud"], state["path"])
+            scene.set_xlim(center[0] - radius, center[0] + radius)
+            scene.set_ylim(center[1] - radius, center[1] + radius)
+            scene.set_zlim(center[2] - radius, center[2] + radius)
+        if "/camera/color/image_raw" in changed:
+            rgb_artist.set_data(state["rgb"])
+        if "/camera/depth/image_rect_raw" in changed:
+            depth = state["depth"]
+            depth_artist.set_data(depth)
+            valid = depth[depth > 0]
+            depth_artist.set_clim(0, max(float(np.percentile(valid, 95)), 1.0))
+        canvas.draw_idle()
+
+    def tick() -> None:
+        try:
+            now = time.perf_counter()
+            if state["playing"]:
+                state["elapsed"] = min(
+                    duration, state["elapsed"] + now - state["last_wall"]
+                )
+                target = reader.start_time + int(state["elapsed"] * 1e9)
+                changed = set()
+                while state["next"] is not None and state["next"][1] <= target:
+                    connection, _, raw = state["next"]
+                    message = typestore.deserialize_cdr(raw, connection.msgtype)
+                    if connection.topic == "/record/cloud_registered":
+                        state["cloud"] = pointcloud_xyz(message)
+                    elif connection.topic == "/fastlio_path":
+                        state["path"] = path_xyz(message)
+                    elif connection.topic == "/camera/color/image_raw":
+                        state["rgb"] = image_array(message)
+                    elif connection.topic == "/camera/depth/image_rect_raw":
+                        state["depth"] = image_array(message)
+                    changed.add(connection.topic)
+                    state["next"] = next(messages, None)
+                if changed:
+                    redraw(changed)
+                if state["next"] is None:
+                    state["playing"] = False
+                    state["finished"] = True
+                    toggle_button.configure(text="Finished", state=tk.DISABLED)
+            state["last_wall"] = now
+            progress["value"] = state["elapsed"]
+            elapsed_text.set(f"{state['elapsed']:.1f} / {duration:.1f} s")
+            root.after(33, tick)
+        except Exception as error:
+            messagebox.showerror("Playback error", str(error))
+            close()
+
+    root.protocol("WM_DELETE_WINDOW", close)
+    root.after(0, tick)
+    root.mainloop()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Display a synchronized leakage ROS2 bag")
     parser.add_argument("bag", type=Path)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    if not args.check:
-        parser.error("GUI is not implemented yet; use --check")
-    check_bag(args.bag.resolve())
+    directory = args.bag.resolve()
+    if args.check:
+        check_bag(directory)
+    else:
+        play_bag(directory)
 
 
 if __name__ == "__main__":

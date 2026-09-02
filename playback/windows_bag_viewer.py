@@ -34,6 +34,11 @@ def axis_bounds(cloud: np.ndarray, path: np.ndarray) -> tuple[np.ndarray, float]
     return (minimum + maximum) / 2, max(float((maximum - minimum).max() / 2), 1.0)
 
 
+def combine_cloud_frames(frames: list[np.ndarray]) -> np.ndarray:
+    nonempty = [frame for frame in frames if frame.size]
+    return np.vstack(nonempty) if nonempty else np.empty((0, 3))
+
+
 def pointcloud_xyz(message) -> np.ndarray:
     offsets = {field.name: field.offset for field in message.fields}
     if not all(name in offsets for name in ("x", "y", "z")):
@@ -85,6 +90,19 @@ def check_bag(directory: Path) -> None:
             print(f"{topic}={connection.msgcount}")
 
 
+def load_base_map(directory: Path, typestore) -> np.ndarray:
+    frames = []
+    with Reader(directory) as reader:
+        connection = next(
+            item
+            for item in reader.connections
+            if item.topic == "/record/cloud_registered"
+        )
+        for _, _, raw in reader.messages(connections=[connection]):
+            frames.append(pointcloud_xyz(typestore.deserialize_cdr(raw, connection.msgtype)))
+    return combine_cloud_frames(frames)
+
+
 def play_bag(directory: Path) -> None:
     import tkinter as tk
     from tkinter import messagebox, ttk
@@ -95,12 +113,13 @@ def play_bag(directory: Path) -> None:
     if not directory.is_dir():
         raise FileNotFoundError(f"bag directory not found: {directory}")
 
+    typestore = get_typestore(Stores.ROS2_FOXY)
+    base_map = load_base_map(directory, typestore)
     reader = Reader(directory)
     reader.open()
     validate_topics({connection.topic for connection in reader.connections})
     connections = [item for item in reader.connections if item.topic in TOPICS]
     messages = iter(reader.messages(connections=connections))
-    typestore = get_typestore(Stores.ROS2_FOXY)
     duration = (reader.end_time - reader.start_time) / 1e9
 
     root = tk.Tk()
@@ -108,21 +127,36 @@ def play_bag(directory: Path) -> None:
     root.geometry("1400x850")
 
     figure = Figure(figsize=(14, 8), tight_layout=True)
+    figure.patch.set_facecolor("#101318")
     grid = figure.add_gridspec(2, 2, width_ratios=(1.4, 1.0))
     scene = figure.add_subplot(grid[:, 0], projection="3d")
     rgb_axis = figure.add_subplot(grid[0, 1])
     depth_axis = figure.add_subplot(grid[1, 1])
-    scene.set_title("Fast-LIO point cloud and path")
-    scene.set_xlabel("X (m)")
-    scene.set_ylabel("Y (m)")
-    scene.set_zlabel("Z (m)")
+    scene.set_facecolor("#101318")
+    scene.set_axis_off()
     rgb_axis.set_title("RGB")
     depth_axis.set_title("Depth")
     rgb_axis.axis("off")
     depth_axis.axis("off")
 
-    cloud_artist = scene.scatter([], [], [], s=2, cmap="viridis")
-    (path_artist,) = scene.plot([], [], [], color="red", linewidth=2)
+    scene.scatter(
+        base_map[:, 0],
+        base_map[:, 1],
+        base_map[:, 2],
+        s=0.5,
+        color="#9aa0a6",
+        alpha=0.18,
+        depthshade=False,
+    )
+    cloud_artist = scene.scatter(
+        [], [], [], s=8, color="#ffd23f", alpha=1.0, depthshade=False
+    )
+    (path_artist,) = scene.plot([], [], [], color="#00ff66", linewidth=2.5)
+    center, radius = axis_bounds(base_map, np.empty((0, 3)))
+    scene.set_xlim(center[0] - radius, center[0] + radius)
+    scene.set_ylim(center[1] - radius, center[1] + radius)
+    scene.set_zlim(center[2] - radius, center[2] + radius)
+    scene.set_box_aspect((1, 1, 1))
     rgb_artist = rgb_axis.imshow(np.zeros((480, 640, 3), dtype=np.uint8))
     depth_artist = depth_axis.imshow(
         np.zeros((480, 640), dtype=np.uint16), cmap="turbo", vmin=0, vmax=4000
@@ -169,16 +203,10 @@ def play_bag(directory: Path) -> None:
         if "/record/cloud_registered" in changed:
             cloud = state["cloud"]
             cloud_artist._offsets3d = (cloud[:, 0], cloud[:, 1], cloud[:, 2])
-            cloud_artist.set_array(cloud[:, 2])
         if "/fastlio_path" in changed:
             path = state["path"]
             path_artist.set_data(path[:, 0], path[:, 1])
             path_artist.set_3d_properties(path[:, 2])
-        if changed & {"/record/cloud_registered", "/fastlio_path"}:
-            center, radius = axis_bounds(state["cloud"], state["path"])
-            scene.set_xlim(center[0] - radius, center[0] + radius)
-            scene.set_ylim(center[1] - radius, center[1] + radius)
-            scene.set_zlim(center[2] - radius, center[2] + radius)
         if "/camera/color/image_raw" in changed:
             rgb_artist.set_data(state["rgb"])
         if "/camera/depth/image_rect_raw" in changed:

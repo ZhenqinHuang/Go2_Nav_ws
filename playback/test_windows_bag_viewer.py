@@ -6,6 +6,7 @@ import numpy as np
 
 from playback.windows_bag_viewer import (
     axis_bounds,
+    combine_cloud_frames,
     image_array,
     path_xyz,
     pointcloud_xyz,
@@ -93,6 +94,19 @@ class TopicValidationTest(unittest.TestCase):
 
 
 class ViewMathTest(unittest.TestCase):
+    def test_combines_registered_cloud_frames(self):
+        combined = combine_cloud_frames(
+            [
+                np.asarray([[1.0, 2.0, 3.0]]),
+                np.asarray([[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]),
+            ]
+        )
+
+        np.testing.assert_allclose(
+            combined,
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+        )
+
     def test_combines_cloud_and_path_bounds(self):
         center, radius = axis_bounds(
             np.asarray([[0.0, 0.0, 0.0], [2.0, 4.0, 6.0]]),

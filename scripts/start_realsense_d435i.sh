@@ -16,7 +16,7 @@ export LD_LIBRARY_PATH="$workspace/install/realsense2_camera/lib:$workspace/inst
 nohup "$node" --ros-args \
   -r __node:=camera -r __ns:=/camera \
   -p enable_depth:=true -p enable_color:=true \
-  -p align.enable:=false \
+  -p align.enable:=true \
   -p enable_gyro:=false -p enable_accel:=false \
   -p depth_module.profile:=640x480x30 \
   -p rgb_camera.profile:=640x480x30 \

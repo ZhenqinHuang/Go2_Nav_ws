@@ -15,6 +15,7 @@ setup(
         "console_scripts": [
             "record_relay = leakage_bringup.record_relay:main",
             "trajectory_recorder = leakage_bringup.trajectory_recorder:main",
+            "leakage_detector = leakage_bringup.leakage_detector:main",
         ]
     },
 )

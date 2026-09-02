@@ -9,7 +9,7 @@ from .preflight_state import PreflightState
 class TopicPreflight(Node):
     def __init__(self) -> None:
         super().__init__("leakage_topic_preflight")
-        self.state = PreflightState({"odom", "cloud", "rgb", "depth"})
+        self.state = PreflightState({"odom", "cloud", "rgb", "aligned_depth"})
         self._subscriptions = [
             self.create_subscription(Path, "/fastlio_path", lambda _: self._seen("odom"), 10),
             self.create_subscription(
@@ -19,7 +19,12 @@ class TopicPreflight(Node):
                 10,
             ),
             self.create_subscription(Image, "/camera/color/image_raw", lambda _: self._seen("rgb"), 10),
-            self.create_subscription(Image, "/camera/depth/image_rect_raw", lambda _: self._seen("depth"), 10),
+            self.create_subscription(
+                Image,
+                "/camera/aligned_depth_to_color/image_raw",
+                lambda _: self._seen("aligned_depth"),
+                10,
+            ),
         ]
 
     def _seen(self, name: str) -> None:

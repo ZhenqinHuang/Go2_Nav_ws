@@ -13,3 +13,8 @@
 /camera/color/camera_info
 /camera/depth/image_rect_raw
 /camera/depth/camera_info
+/camera/aligned_depth_to_color/image_raw
+
+# Leakage segmentation and gated 3D localization
+/leakage/mask
+/leakage/points

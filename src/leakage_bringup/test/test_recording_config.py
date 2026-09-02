@@ -27,4 +27,20 @@ def test_preflight_waits_for_registered_cloud():
     ).read_text()
     assert "PointCloud2" in source
     assert '"/record/cloud_registered"' in source
-    assert '{"odom", "cloud", "rgb", "depth"}' in source
+    assert '{"odom", "cloud", "rgb", "aligned_depth"}' in source
+
+
+def test_realsense_starts_aligned_depth():
+    script = (ROOT / "scripts" / "start_realsense_d435i.sh").read_text()
+    assert "-p align.enable:=true" in script
+
+
+def test_recording_includes_aligned_depth():
+    topics = (ROOT / "config" / "record_topics.txt").read_text()
+    assert "/camera/aligned_depth_to_color/image_raw" in topics
+
+
+def test_recording_includes_detection_outputs():
+    topics = (ROOT / "config" / "record_topics.txt").read_text()
+    assert "/leakage/mask" in topics
+    assert "/leakage/points" in topics

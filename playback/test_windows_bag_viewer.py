@@ -6,12 +6,14 @@ import numpy as np
 
 from playback.windows_bag_viewer import (
     axis_bounds,
+    build_parser,
     combine_cloud_frames,
     height_colors,
     image_array,
     incremental_entity_path,
     path_xyz,
     pointcloud_xyz,
+    rerun_blueprint,
     validate_topics,
 )
 
@@ -84,6 +86,17 @@ class DecoderTest(unittest.TestCase):
 
 
 class TopicValidationTest(unittest.TestCase):
+    def test_parses_rerun_and_legacy_modes(self):
+        parser = build_parser()
+
+        default = parser.parse_args(["bag"])
+        legacy = parser.parse_args(["bag", "--legacy"])
+        saved = parser.parse_args(["bag", "--save", "session.rrd"])
+
+        self.assertFalse(default.legacy)
+        self.assertTrue(legacy.legacy)
+        self.assertEqual(saved.save.name, "session.rrd")
+
     def test_rejects_missing_required_topic(self):
         with self.assertRaisesRegex(ValueError, "/fastlio_path"):
             validate_topics(
@@ -96,6 +109,16 @@ class TopicValidationTest(unittest.TestCase):
 
 
 class ViewMathTest(unittest.TestCase):
+    def test_builds_two_map_tabs(self):
+        blueprint = rerun_blueprint()
+        tabs = blueprint.root_container.contents[0]
+
+        self.assertEqual(type(blueprint.root_container).__name__, "Horizontal")
+        self.assertEqual(type(tabs).__name__, "Tabs")
+        self.assertEqual(
+            [view.name for view in tabs.contents], ["Complete map", "Incremental map"]
+        )
+
     def test_builds_bounded_height_colors(self):
         colors = height_colors(
             np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]]), brightness=0.5

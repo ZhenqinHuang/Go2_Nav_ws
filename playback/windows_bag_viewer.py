@@ -62,6 +62,56 @@ def incremental_entity_path(frame_index: int) -> str:
     return f"/incremental/map/frame_{frame_index:06d}"
 
 
+def rerun_blueprint():
+    try:
+        import rerun.blueprint as rrb
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "Rerun is required: py -m pip install --user rerun-sdk==0.37.0"
+        ) from error
+
+    scene_style = {
+        "background": [0, 0, 0],
+        "line_grid": rrb.LineGrid3D(visible=False),
+        "spatial_information": rrb.SpatialInformation(
+            target_frame="/", show_axes=False, show_bounding_box=False
+        ),
+    }
+    return rrb.Blueprint(
+        rrb.Horizontal(
+            rrb.Tabs(
+                rrb.Spatial3DView(
+                    name="Complete map",
+                    origin="/",
+                    contents=["+ /complete/**", "+ /current/**", "+ /trajectory/**"],
+                    **scene_style,
+                ),
+                rrb.Spatial3DView(
+                    name="Incremental map",
+                    origin="/",
+                    contents=[
+                        "+ /incremental/**",
+                        "+ /current/**",
+                        "+ /trajectory/**",
+                    ],
+                    **scene_style,
+                ),
+                active_tab=0,
+            ),
+            rrb.Vertical(
+                rrb.Spatial2DView(
+                    name="RGB", origin="/camera/rgb", contents="+ /camera/rgb/**"
+                ),
+                rrb.Spatial2DView(
+                    name="Depth", origin="/camera/depth", contents="+ /camera/depth/**"
+                ),
+                row_shares=[1, 1],
+            ),
+            column_shares=[3, 1],
+        )
+    )
+
+
 def pointcloud_xyz(message) -> np.ndarray:
     offsets = {field.name: field.offset for field in message.fields}
     if not all(name in offsets for name in ("x", "y", "z")):
@@ -124,6 +174,93 @@ def load_base_map(directory: Path, typestore) -> np.ndarray:
         for _, _, raw in reader.messages(connections=[connection]):
             frames.append(pointcloud_xyz(typestore.deserialize_cdr(raw, connection.msgtype)))
     return combine_cloud_frames(frames)
+
+
+def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
+    try:
+        import rerun as rr
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "Rerun is required: py -m pip install --user rerun-sdk==0.37.0"
+        ) from error
+
+    if not directory.is_dir():
+        raise FileNotFoundError(f"bag directory not found: {directory}")
+    if save_path is not None:
+        if not save_path.parent.is_dir():
+            raise FileNotFoundError(f"output directory not found: {save_path.parent}")
+        if save_path.exists():
+            raise FileExistsError(f"refusing to overwrite: {save_path}")
+
+    typestore = get_typestore(Stores.ROS2_FOXY)
+    base_map = load_base_map(directory, typestore)
+    if not len(base_map):
+        raise ValueError("bag contains no registered point-cloud frames")
+
+    blueprint = rerun_blueprint()
+    rr.init(
+        "leakage_ros2_bag",
+        spawn=save_path is None,
+        default_blueprint=blueprint,
+    )
+    if save_path is not None:
+        rr.save(save_path, default_blueprint=blueprint)
+
+    rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+    rr.log(
+        "/complete/map",
+        rr.Points3D(
+            base_map,
+            colors=height_colors(base_map, brightness=0.35),
+            radii=0.012,
+        ),
+        static=True,
+    )
+
+    cloud_index = 0
+    with Reader(directory) as reader:
+        validate_topics({connection.topic for connection in reader.connections})
+        connections = [item for item in reader.connections if item.topic in TOPICS]
+        for connection, timestamp, raw in reader.messages(connections=connections):
+            rr.set_time("bag_time", duration=(timestamp - reader.start_time) / 1e9)
+            message = typestore.deserialize_cdr(raw, connection.msgtype)
+            if connection.topic == "/record/cloud_registered":
+                cloud = pointcloud_xyz(message)
+                rr.log(
+                    incremental_entity_path(cloud_index),
+                    rr.Points3D(
+                        cloud,
+                        colors=height_colors(cloud, brightness=0.55),
+                        radii=0.012,
+                    ),
+                )
+                rr.log(
+                    "/current/scan",
+                    rr.Points3D(cloud, colors=[255, 45, 210], radii=0.025),
+                )
+                cloud_index += 1
+            elif connection.topic == "/fastlio_path":
+                path = path_xyz(message)
+                if len(path):
+                    rr.log(
+                        "/trajectory/path",
+                        rr.LineStrips3D(
+                            [path], colors=[0, 255, 102], radii=0.025
+                        ),
+                    )
+            elif connection.topic == "/camera/color/image_raw":
+                rr.log("/camera/rgb/image", rr.Image(image_array(message)))
+            elif connection.topic == "/camera/depth/image_rect_raw":
+                rr.log(
+                    "/camera/depth/image",
+                    rr.DepthImage(image_array(message), meter=1000),
+                )
+
+    rr.disconnect()
+    if save_path is not None:
+        print(f"saved_rerun={save_path}")
+    else:
+        print(f"loaded_cloud_frames={cloud_index}")
 
 
 def play_bag(directory: Path) -> None:
@@ -280,16 +417,26 @@ def play_bag(directory: Path) -> None:
     root.mainloop()
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Display a synchronized leakage ROS2 bag")
     parser.add_argument("bag", type=Path)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--legacy", action="store_true")
+    mode.add_argument("--save", type=Path, metavar="FILE.rrd")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     directory = args.bag.resolve()
     if args.check:
         check_bag(directory)
-    else:
+    elif args.legacy:
         play_bag(directory)
+    else:
+        save_path = args.save.resolve() if args.save else None
+        play_bag_rerun(directory, save_path)
 
 
 if __name__ == "__main__":

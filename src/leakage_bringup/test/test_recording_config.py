@@ -21,6 +21,7 @@ def test_record_script_applies_qos_overrides():
     assert "--qos-profile-overrides-path" in script
     assert 'bash "$workspace/scripts/hardware_preflight.sh"' in script
     assert "tr -d '\\r'" in script
+    assert "livox_ros_driver2/package.bash" in script
 
 
 def test_preflight_waits_for_registered_cloud():

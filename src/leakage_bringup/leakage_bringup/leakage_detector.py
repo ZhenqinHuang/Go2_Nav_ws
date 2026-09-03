@@ -1,3 +1,4 @@
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -8,11 +9,12 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 
-from .leakage_projection import calibration_ready, camera_points_to_map, mask_depth_points
-
-
-def stamp_seconds(stamp) -> float:
-    return float(stamp.sec) + float(stamp.nanosec) / 1e9
+from .leakage_projection import (
+    calibration_ready,
+    camera_points_to_map,
+    mask_depth_points,
+    synchronized_inputs,
+)
 
 
 class LeakageDetector(Node):
@@ -41,7 +43,9 @@ class LeakageDetector(Node):
         if not self.enable_3d:
             self.get_logger().warning("calibration gate closed; publishing 2D masks only")
 
-        self.rgb = self.depth = self.info = self.odom = None
+        self.rgb = self.info = None
+        self.depths = deque(maxlen=30)
+        self.odoms = deque(maxlen=30)
         self.mask_pub = self.create_publisher(Image, "/leakage/mask", 10)
         self.cloud_pub = self.create_publisher(PointCloud2, "/leakage/points", 10)
         camera_qos = QoSProfile(
@@ -63,13 +67,13 @@ class LeakageDetector(Node):
         self.create_timer(1.0 / inference_hz, self._infer)
 
     def _depth(self, message):
-        self.depth = message
+        self.depths.append(message)
 
     def _info(self, message):
         self.info = message
 
     def _odom(self, message):
-        self.odom = message
+        self.odoms.append(message)
 
     def _rgb(self, message):
         if message.encoding != "rgb8":
@@ -113,26 +117,28 @@ class LeakageDetector(Node):
         return output
 
     def _publish_3d(self, mask, rgb):
-        if self.depth is None or self.info is None or self.odom is None:
+        if self.info is None:
             return
-        if self.depth.encoding != "16UC1":
+        depth, odom = synchronized_inputs(
+            rgb,
+            self.depths,
+            self.odoms,
+            float(self.calibration["residual_time_offset_s"]),
+            float(self.get_parameter("max_sync_delta_s").value),
+        )
+        if depth is None or odom is None:
+            return
+        if depth.encoding != "16UC1":
             self.get_logger().error(
-                f"unsupported aligned-depth encoding: {self.depth.encoding}"
+                f"unsupported aligned-depth encoding: {depth.encoding}"
             )
             return
-        max_delta = float(self.get_parameter("max_sync_delta_s").value)
-        rgb_time = stamp_seconds(rgb.header.stamp)
-        if any(
-            abs(rgb_time - stamp_seconds(item.header.stamp)) > max_delta
-            for item in (self.depth, self.odom)
-        ):
-            return
-        depth = np.frombuffer(self.depth.data, dtype="<u2").reshape(
-            self.depth.height, self.depth.step // 2
-        )[:, : self.depth.width]
+        depth_image = np.frombuffer(depth.data, dtype="<u2").reshape(
+            depth.height, depth.step // 2
+        )[:, : depth.width]
         points = mask_depth_points(
             mask,
-            depth,
+            depth_image,
             self.info.k[0],
             self.info.k[4],
             self.info.k[2],
@@ -141,8 +147,8 @@ class LeakageDetector(Node):
             int(self.get_parameter("point_stride").value),
         )
         if len(points):
-            mapped = camera_points_to_map(points, self.calibration, self.odom.pose.pose)
-            self.cloud_pub.publish(self._cloud_message(mapped, rgb, self.odom.header.frame_id))
+            mapped = camera_points_to_map(points, self.calibration, odom.pose.pose)
+            self.cloud_pub.publish(self._cloud_message(mapped, rgb, odom.header.frame_id))
 
     @staticmethod
     def _cloud_message(points, source, frame_id):

@@ -31,3 +31,8 @@ Without `--residual-time-offset-s`, the output intentionally remains
 `status: uncalibrated`, so 3D leakage publication stays disabled. Only add that
 option after measuring the residual offset from a motion-rich synchronized
 capture.
+
+`residual_time_offset_s` is added to an RGB header timestamp before matching it
+to LiDAR-derived odometry. A positive value means the camera header time is
+earlier than the corresponding LiDAR time. Aligned depth stays on the unshifted
+RGB camera clock.

@@ -3,6 +3,29 @@ import math
 import numpy as np
 
 
+def stamp_seconds(stamp) -> float:
+    return float(stamp.sec) + float(stamp.nanosec) / 1e9
+
+
+def synchronized_inputs(rgb, depths, odoms, residual_time_offset_s, max_delta_s):
+    rgb_time = stamp_seconds(rgb.header.stamp)
+
+    def nearest(messages, target_time):
+        if not messages:
+            return None
+        message = min(
+            messages,
+            key=lambda item: abs(stamp_seconds(item.header.stamp) - target_time),
+        )
+        if abs(stamp_seconds(message.header.stamp) - target_time) > max_delta_s:
+            return None
+        return message
+
+    return nearest(depths, rgb_time), nearest(
+        odoms, rgb_time + residual_time_offset_s
+    )
+
+
 def calibration_ready(data: dict) -> bool:
     camera = data.get("lidar_to_camera", {})
     imu = data.get("lidar_to_imu", {})

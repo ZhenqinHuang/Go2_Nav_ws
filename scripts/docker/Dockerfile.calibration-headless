@@ -1,0 +1,5 @@
+FROM koide3/direct_visual_lidar_calibration:humble
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends xvfb xauth \
+ && rm -rf /var/lib/apt/lists/*

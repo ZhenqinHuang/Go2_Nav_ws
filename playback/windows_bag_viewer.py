@@ -16,6 +16,7 @@ RGB_TOPIC = "/camera/color/image_raw"
 RAW_DEPTH_TOPIC = "/camera/depth/image_rect_raw"
 ALIGNED_DEPTH_TOPIC = "/camera/aligned_depth_to_color/image_raw"
 MASK_TOPIC = "/leakage/mask"
+LEAKAGE_POINTS_TOPIC = "/leakage/points"
 REQUIRED_TOPICS = (CLOUD_TOPIC, PATH_TOPIC, RGB_TOPIC)
 
 
@@ -31,7 +32,10 @@ def select_depth_topic(available: set[str]) -> str:
 
 def playback_topics(available: set[str]) -> tuple[str, ...]:
     topics = REQUIRED_TOPICS + (select_depth_topic(available),)
-    return topics + ((MASK_TOPIC,) if MASK_TOPIC in available else ())
+    optional = tuple(
+        topic for topic in (MASK_TOPIC, LEAKAGE_POINTS_TOPIC) if topic in available
+    )
+    return topics + optional
 
 
 def validate_topics(available: set[str]) -> None:
@@ -79,6 +83,12 @@ def incremental_entity_path(frame_index: int) -> str:
     return f"/incremental/map/frame_{frame_index:06d}"
 
 
+def leakage_entity_path(frame_index: int) -> str:
+    if frame_index < 0:
+        raise ValueError("frame index must not be negative")
+    return f"/leakage/points/frame_{frame_index:06d}"
+
+
 def rerun_blueprint():
     try:
         import rerun.blueprint as rrb
@@ -100,7 +110,12 @@ def rerun_blueprint():
                 rrb.Spatial3DView(
                     name="Complete map",
                     origin="/",
-                    contents=["+ /complete/**", "+ /current/**", "+ /trajectory/**"],
+                    contents=[
+                        "+ /complete/**",
+                        "+ /current/**",
+                        "+ /trajectory/**",
+                        "+ /leakage/**",
+                    ],
                     **scene_style,
                 ),
                 rrb.Spatial3DView(
@@ -110,6 +125,7 @@ def rerun_blueprint():
                         "+ /incremental/**",
                         "+ /current/**",
                         "+ /trajectory/**",
+                        "+ /leakage/**",
                     ],
                     **scene_style,
                 ),
@@ -254,7 +270,7 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
         static=True,
     )
 
-    cloud_index = 0
+    cloud_index = leakage_index = 0
     with Reader(directory) as reader:
         available = {connection.topic for connection in reader.connections}
         validate_topics(available)
@@ -301,6 +317,14 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
                     "/camera/rgb/leakage",
                     rr.SegmentationImage(mask, opacity=0.55, draw_order=1.0),
                 )
+            elif connection.topic == LEAKAGE_POINTS_TOPIC:
+                points = pointcloud_xyz(message)
+                if len(points):
+                    rr.log(
+                        leakage_entity_path(leakage_index),
+                        rr.Points3D(points, colors=[255, 35, 35], radii=0.04),
+                    )
+                    leakage_index += 1
 
     rr.disconnect()
     if save_path is not None:
@@ -361,6 +385,9 @@ def play_bag(directory: Path) -> None:
         [], [], [], s=8, color="#ffd23f", alpha=1.0, depthshade=False
     )
     (path_artist,) = scene.plot([], [], [], color="#00ff66", linewidth=2.5)
+    leakage_artist = scene.scatter(
+        [], [], [], s=12, color="#ff2323", alpha=1.0, depthshade=False
+    )
     center, radius = axis_bounds(base_map, np.empty((0, 3)))
     scene.set_xlim(center[0] - radius, center[0] + radius)
     scene.set_ylim(center[1] - radius, center[1] + radius)
@@ -392,6 +419,7 @@ def play_bag(directory: Path) -> None:
         "next": next(messages, None),
         "cloud": np.empty((0, 3)),
         "path": np.empty((0, 3)),
+        "leakage": np.empty((0, 3)),
         "closed": False,
     }
 
@@ -419,6 +447,9 @@ def play_bag(directory: Path) -> None:
             path = state["path"]
             path_artist.set_data(path[:, 0], path[:, 1])
             path_artist.set_3d_properties(path[:, 2])
+        if LEAKAGE_POINTS_TOPIC in changed:
+            points = state["leakage"]
+            leakage_artist._offsets3d = (points[:, 0], points[:, 1], points[:, 2])
         if RGB_TOPIC in changed:
             rgb_artist.set_data(state["rgb"])
         if MASK_TOPIC in changed:
@@ -452,6 +483,10 @@ def play_bag(directory: Path) -> None:
                         state["depth"] = image_array(message)
                     elif connection.topic == MASK_TOPIC:
                         state["mask"] = image_array(message)
+                    elif connection.topic == LEAKAGE_POINTS_TOPIC:
+                        state["leakage"] = combine_cloud_frames(
+                            [state["leakage"], pointcloud_xyz(message)]
+                        )
                     changed.add(connection.topic)
                     state["next"] = next(messages, None)
                 if changed:

@@ -11,8 +11,10 @@ from playback.windows_bag_viewer import (
     height_colors,
     image_array,
     incremental_entity_path,
+    leakage_entity_path,
     mask_rgba,
     path_xyz,
+    playback_topics,
     pointcloud_xyz,
     rerun_blueprint,
     select_depth_topic,
@@ -123,6 +125,18 @@ class TopicValidationTest(unittest.TestCase):
                 }
             )
 
+    def test_includes_optional_3d_leakage_points_when_available(self):
+        available = {
+            "/record/cloud_registered",
+            "/fastlio_path",
+            "/camera/color/image_raw",
+            "/camera/aligned_depth_to_color/image_raw",
+            "/leakage/points",
+        }
+
+        self.assertIn("/leakage/points", playback_topics(available))
+        self.assertNotIn("/leakage/points", playback_topics(available - {"/leakage/points"}))
+
 
 class ViewMathTest(unittest.TestCase):
     def test_builds_transparent_red_leakage_overlay(self):
@@ -154,6 +168,9 @@ class ViewMathTest(unittest.TestCase):
         self.assertEqual(
             incremental_entity_path(12), "/incremental/map/frame_000012"
         )
+
+    def test_builds_unique_leakage_entity_path(self):
+        self.assertEqual(leakage_entity_path(12), "/leakage/points/frame_000012")
 
     def test_combines_registered_cloud_frames(self):
         combined = combine_cloud_frames(

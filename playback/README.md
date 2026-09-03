@@ -18,9 +18,10 @@ Then double-click `run_windows_viewer.bat`. The Rerun window provides two tabs:
 
 Both tabs show the current scan in magenta and the cumulative Fast-LIO path in
 green. RGB and depth images are synchronized on the right; YOLO leakage masks
-are overlaid in red when recorded. Aligned depth is preferred automatically,
-with raw depth retained as a fallback for older bags. Use Rerun's bottom timeline
-to play, pause, scrub, or change playback speed.
+are overlaid in red when recorded. Calibrated `/leakage/points` accumulate as
+bright red points in both 3D map tabs. Aligned depth is preferred automatically,
+with raw depth retained as a fallback for older bags. Use Rerun's bottom
+timeline to play, pause, scrub, or change playback speed.
 
 The launcher opens `leakage_session.rerun.rrd` when that cache is present;
 otherwise it builds the same view directly from the ROS2 bag. To use the old

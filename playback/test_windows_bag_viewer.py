@@ -154,6 +154,8 @@ class ViewMathTest(unittest.TestCase):
         self.assertEqual(
             [view.name for view in tabs.contents], ["Complete map", "Incremental map"]
         )
+        for view in tabs.contents:
+            self.assertIsNone(view.properties["SpatialInformation"].target_frame)
 
     def test_builds_bounded_height_colors(self):
         colors = height_colors(

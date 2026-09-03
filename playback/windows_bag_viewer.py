@@ -100,8 +100,8 @@ def rerun_blueprint():
     scene_style = {
         "background": [0, 0, 0],
         "line_grid": rrb.LineGrid3D(visible=False),
-        "spatial_information": rrb.SpatialInformation(
-            target_frame="/", show_axes=False, show_bounding_box=False
+        "spatial_information": rrb.SpatialInformation.from_fields(
+            show_axes=False, show_bounding_box=False
         ),
     }
     return rrb.Blueprint(

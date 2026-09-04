@@ -266,7 +266,7 @@ def play_bag_rerun(directory: Path, save_path: Path | None = None) -> None:
     )
     rr.log(
         "/camera/rgb",
-        rr.AnnotationContext([(1, "Leakage", (255, 0, 0))]),
+        rr.AnnotationContext([(0, "Background", (0, 0, 0, 0)), (1, "Leakage", (255, 0, 0))]),
         static=True,
     )
 

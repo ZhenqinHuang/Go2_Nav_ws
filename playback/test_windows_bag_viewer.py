@@ -1,6 +1,9 @@
 import struct
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -14,6 +17,7 @@ from playback.windows_bag_viewer import (
     leakage_entity_path,
     mask_rgba,
     path_xyz,
+    play_bag_rerun,
     playback_topics,
     pointcloud_xyz,
     rerun_blueprint,
@@ -139,6 +143,37 @@ class TopicValidationTest(unittest.TestCase):
 
 
 class ViewMathTest(unittest.TestCase):
+    def test_rerun_segmentation_background_is_transparent(self):
+        import rerun as rr
+
+        # Isolate bag I/O and capture the actual Rerun archetypes sent by the viewer.
+        with TemporaryDirectory() as temporary, patch(
+            "playback.windows_bag_viewer.load_base_map",
+            return_value=np.asarray([[0.0, 0.0, 0.0]]),
+        ), patch("playback.windows_bag_viewer.Reader") as reader, patch(
+            "rerun.log"
+        ) as logged:
+            reader.return_value.__enter__.return_value.connections = [
+                SimpleNamespace(topic=topic)
+                for topic in (
+                    "/record/cloud_registered", "/fastlio_path",
+                    "/camera/color/image_raw",
+                    "/camera/aligned_depth_to_color/image_raw",
+                )
+            ]
+            play_bag_rerun(Path(temporary), Path(temporary) / "test.rrd")
+            context = next(
+                call.args[1] for call in logged.call_args_list
+                if isinstance(call.args[1], rr.AnnotationContext)
+            )
+            classes = {
+                item["class_id"]: item["class_description"]["info"]["color"]
+                for item in context.context.as_arrow_array().to_pylist()[0]
+            }
+            self.assertIn(0, classes, "Unspecified background gets an opaque auto-color")
+            self.assertEqual(classes[0] & 255, 0)
+            self.assertEqual(classes[1], 0xFF0000FF)
+
     def test_builds_transparent_red_leakage_overlay(self):
         overlay = mask_rgba(np.asarray([[0, 255]], dtype=np.uint8))
 
